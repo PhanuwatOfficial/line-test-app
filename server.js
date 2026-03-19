@@ -1,7 +1,9 @@
 const express = require("express")
 const line = require("@line/bot-sdk")
+const crypto = require("crypto")
 
 const app = express()
+// ✅ สำคัญ: ให้ request body เป็น raw string สำหรับ webhook
 app.use(express.json())
 app.use(express.static("public"))
 
@@ -54,22 +56,34 @@ async function firebase_delete(path) {
 }
 
 // Webhook Route - รับ events จาก LINE
-app.post("/webhook", line.middleware(config), (req, res) => {
-  console.log("Webhook received")
-  console.log("Events:", JSON.stringify(req.body.events, null, 2))
-  
-  // ต้อง return 200 เสมอ ไม่ว่าจะเกิด error หรือไม่
-  Promise
-    .all(req.body.events.map(handleEvent))
-    .then((result) => {
-      console.log("Webhook processed successfully")
-      res.status(200).json({ ok: true })
-    })
-    .catch((err) => {
-      console.error("Webhook error:", err)
-      // ยังคง return 200 เพื่อ prevent LINE retry
-      res.status(200).json({ ok: true, error: err.message })
-    })
+app.post("/webhook", express.raw({ type: 'application/json' }), async (req, res) => {
+  try {
+    const signature = req.get('x-line-signature')
+    const body = req.body
+    
+    // ตรวจสอบ signature
+    const hmac = crypto.createHmac('sha256', config.channelSecret)
+    hmac.update(body)
+    const hash = hmac.digest('base64')
+    
+    if (signature !== hash) {
+      console.warn('Signature validation failed')
+      return res.status(403).json({ error: 'Invalid signature' })
+    }
+    
+    // parse JSON body
+    const events = JSON.parse(body).events
+    console.log("Webhook received")
+    console.log("Events:", JSON.stringify(events, null, 2))
+    
+    await Promise.all(events.map(handleEvent))
+    
+    console.log("Webhook processed successfully")
+    res.status(200).json({ ok: true })
+  } catch (err) {
+    console.error("Webhook error:", err)
+    res.status(200).json({ ok: true, error: err.message })
+  }
 })
 
 // Handle events จาก LINE และเก็บ userId
