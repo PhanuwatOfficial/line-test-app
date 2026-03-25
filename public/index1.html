@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>LINE Test</title>
+</head>
+
+<body>
+
+<h1>LINE Bot Dashboard</h1>
+
+<style>
+  body { font-family: Arial; max-width: 1000px; margin: 50px auto; }
+  .section { border: 1px solid #ddd; padding: 20px; margin: 20px 0; border-radius: 5px; }
+  input, textarea { width: 100%; padding: 10px; margin: 10px 0; box-sizing: border-box; }
+  button { background: #00b900; color: white; padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; margin-right: 5px; }
+  button:hover { background: #009900; }
+  .info { background: #f0f0f0; padding: 10px; border-radius: 5px; margin: 10px 0; }
+  .followers-list { max-height: 300px; overflow-y: auto; }
+  .logs-viewer { background: #1e1e1e; color: #d4d4d4; padding: 10px; border-radius: 5px; font-family: monospace; font-size: 12px; max-height: 400px; overflow-y: auto; line-height: 1.5; }
+  .log-entry { margin: 2px 0; padding: 2px; border-left: 3px solid #666; padding-left: 8px; }
+  .log-info { border-left-color: #0066cc; color: #6ab0ff; }
+  .log-warn { border-left-color: #ffaa00; color: #ffaa00; }
+  .log-error { border-left-color: #ff0000; color: #ff6b6b; }
+  #autoRefreshCheckbox { margin: 10px 0; }
+</style>
+
+<!-- Send to Single User -->
+<div class="section">
+  <h2>📨 Send to Single User</h2>
+  <input id="userId" placeholder="Enter User ID">
+  <textarea id="msg" placeholder="Type message" rows="3"></textarea>
+  <button onclick="send()">Send Message</button>
+  <div id="statusSingleSend"></div>
+</div>
+
+<!-- Broadcast to All -->
+<div class="section">
+  <h2>📢 Broadcast to All Followers</h2>
+  <textarea id="broadcastMsg" placeholder="Type broadcast message" rows="3"></textarea>
+  <button onclick="broadcast()">Send Broadcast</button>
+  <div id="statusBroadcast"></div>
+</div>
+
+<!-- View Followers -->
+<div class="section">
+  <h2>👥 Followers List</h2>
+  <button onclick="loadFollowers()">Load Followers</button>
+  <button onclick="testAddFollower()" style="background: #0066cc;">Test Add Follower</button>
+  <div class="info" id="followerCount"></div>
+  <div class="followers-list" id="followersList"></div>
+</div>
+
+<!-- Logs Viewer -->
+<div class="section">
+  <h2>📋 Live Logs</h2>
+  <button onclick="loadLogs()">Refresh Logs</button>
+  <button onclick="clearLogs()" style="background: #cc0000;">Clear Logs</button>
+  <div id="autoRefreshCheckbox">
+    <label>
+      <input type="checkbox" id="autoRefresh" onchange="toggleAutoRefresh()"> Auto-refresh (2s)
+    </label>
+  </div>
+  <div class="info" id="logsCount"></div>
+  <div class="logs-viewer" id="logsViewer" style="background: #1e1e1e; color: #d4d4d4; padding: 10px; border-radius: 5px; font-family: monospace; font-size: 12px; max-height: 400px; overflow-y: auto;"></div>
+</div>
+
+<script>
+
+async function send() {
+  const userId = document.getElementById("userId").value.trim()
+  const text = document.getElementById("msg").value.trim()
+  const status = document.getElementById("statusSingleSend")
+
+  if (!userId) {
+    status.innerHTML = '❌ Please enter User ID'
+    return
+  }
+  if (!text) {
+    status.innerHTML = '❌ Please enter message'
+    return
+  }
+
+  status.innerHTML = '⏳ Sending...'
+
+  try {
+    const res = await fetch("/send", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text, userId })
+    })
+    const data = await res.json()
+    
+    if (!res.ok) {
+      status.innerHTML = `❌ Error: ${data.error}`
+      console.error("Send error response:", data)
+      return
+    }
+    
+    status.innerHTML = '✅ Message sent successfully!'
+    document.getElementById("msg").value = ''
+  } catch (err) {
+    status.innerHTML = '❌ Error: ' + err.message
+    console.error("send error:", err)
+  }
+}
+
+async function broadcast() {
+  const text = document.getElementById("broadcastMsg").value.trim()
+  const status = document.getElementById("statusBroadcast")
+
+  if (!text) {
+    status.innerHTML = '❌ Please enter message'
+    return
+  }
+
+  status.innerHTML = '⏳ Broadcasting...'
+
+  try {
+    const res = await fetch("/broadcast", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text })
+    })
+    const data = await res.json()
+    
+    if (!res.ok) {
+      status.innerHTML = `❌ Error: ${data.error}`
+      console.error("Broadcast error response:", data)
+      return
+    }
+    
+    if (data.status === "no followers") {
+      status.innerHTML = '⚠️ No followers to broadcast'
+      return
+    }
+    
+    status.innerHTML = `✅ Broadcast sent!<br>Success: ${data.successCount}, Failed: ${data.errorCount}, Total: ${data.totalFollowers}`
+    document.getElementById("broadcastMsg").value = ''
+  } catch (err) {
+    status.innerHTML = '❌ Error: ' + err.message
+    console.error("broadcast error:", err)
+  }
+}
+
+async function loadFollowers() {
+  const countEl = document.getElementById("followerCount")
+  const listEl = document.getElementById("followersList")
+  countEl.innerHTML = '⏳ Refreshing profiles...'
+  listEl.innerHTML = ''
+
+  try {
+    // Refresh all profiles ก่อน
+    addLog('info', 'Refreshing all profiles before loading...')
+    const refreshRes = await fetch("/refresh-all-profiles", { method: "POST" })
+    const refreshData = await refreshRes.json()
+    addLog('info', `Profiles refreshed: ${refreshData.refreshed}/${refreshData.total}`)
+    
+    // จากนั้น load followers
+    const res = await fetch("/followers")
+    const data = await res.json()
+    
+    if (!res.ok) {
+      countEl.innerHTML = `❌ Error: ${data.error}`
+      return
+    }
+    
+    countEl.innerHTML = `👥 Total Followers: ${data.count}${refreshData.refreshed > 0 ? ` (refreshed: ${refreshData.refreshed})` : ''}`
+    
+    if (data.count === 0) {
+      listEl.innerHTML = '📭 No followers yet'
+      return
+    }
+
+    let html = '<ul style="list-style: none; padding: 0;">'
+    for (let userId in data.followers) {
+      const follower = data.followers[userId]
+      const displayName = follower.displayName || 'Unknown'
+      const picture = follower.pictureUrl ? `<img src="${follower.pictureUrl}" style="width: 40px; height: 40px; border-radius: 20px; margin-right: 10px; vertical-align: middle;">` : '<div style="width: 40px; height: 40px; border-radius: 20px; margin-right: 10px; background: #ccc; display: inline-block;"></div>'
+      const statusMsg = follower.statusMessage ? `<br><small>📝 ${follower.statusMessage}</small>` : ''
+      
+      html += `<li style="background: #f9f9f9; padding: 10px; margin: 5px 0; border-radius: 3px; display: flex; align-items: center; justify-content: space-between;">
+                <div style="display: flex; align-items: center; flex: 1;">
+                  ${picture}
+                  <div style="flex: 1;">
+                    <strong>${displayName}</strong><br>
+                    <small style="color: #666;">ID: ${userId}</small><br>
+                    <small style="color: #999;">Status: ${follower.status}</small>
+                    ${statusMsg}
+                  </div>
+                </div>
+                <button onclick="refreshProfile('${userId}')" style="background: #0066cc; padding: 5px 10px; font-size: 12px;">Refresh</button>
+              </li>`
+    }
+    html += '</ul>'
+    listEl.innerHTML = html
+  } catch (err) {
+    countEl.innerHTML = '❌ Error: ' + err.message
+    console.error("loadFollowers error:", err)
+  }
+}
+
+function addLog(level, message) {
+  // Helper function สำหรับ frontend logging (optional)
+  // ป็นการพิมพ์เฉพาะใน console แท่นั้น
+  console.log(`[${level.toUpperCase()}] ${message}`)
+}
+
+async function refreshProfile(userId) {
+  const listEl = document.getElementById("followersList")
+  try {
+    const res = await fetch(`/refresh-profile/${userId}`, { method: "POST" })
+    const data = await res.json()
+    
+    if (!res.ok) {
+      alert('Error: ' + data.error)
+      return
+    }
+    
+    alert(`✅ Profile updated!\nName: ${data.profile.displayName}`)
+    loadFollowers()
+  } catch (err) {
+    alert('❌ Error: ' + err.message)
+    console.error("refreshProfile error:", err)
+  }
+}
+
+async function testAddFollower() {
+  const countEl = document.getElementById("followerCount")
+  countEl.innerHTML = '⏳ Adding test follower...'
+  
+  try {
+    const res = await fetch("/test-add-follower", { method: "POST" })
+    const data = await res.json()
+    countEl.innerHTML = `✅ ${data.status}`
+    loadFollowers()
+  } catch (err) {
+    countEl.innerHTML = '❌ Error: ' + err.message
+    console.error("testAddFollower error:", err)
+  }
+}
+
+// Logs management
+let autoRefreshInterval = null
+
+function toggleAutoRefresh() {
+  const checked = document.getElementById('autoRefresh').checked
+  if (checked) {
+    autoRefreshInterval = setInterval(loadLogs, 2000)
+    loadLogs()
+  } else {
+    if (autoRefreshInterval) clearInterval(autoRefreshInterval)
+  }
+}
+
+async function loadLogs() {
+  const countEl = document.getElementById("logsCount")
+  const viewerEl = document.getElementById("logsViewer")
+  
+  try {
+    const res = await fetch("/logs")
+    const data = await res.json()
+    
+    countEl.innerHTML = `📊 Total Logs: ${data.logCount}`
+    
+    if (data.logs.length === 0) {
+      viewerEl.innerHTML = '<div class="log-entry">No logs yet</div>'
+      return
+    }
+    
+    let html = ''
+    data.logs.forEach(log => {
+      const className = `log-entry log-${log.level}`
+      const dataStr = log.data ? ` ${JSON.stringify(log.data)}` : ''
+      html += `<div class="${className}">[${log.level.toUpperCase()}] ${log.timestamp} - ${log.message}${dataStr}</div>`
+    })
+    viewerEl.innerHTML = html
+    viewerEl.scrollTop = viewerEl.scrollHeight
+  } catch (err) {
+    countEl.innerHTML = '❌ Error: ' + err.message
+    console.error("loadLogs error:", err)
+  }
+}
+
+async function clearLogs() {
+  if (!confirm('Are you sure you want to clear all logs?')) return
+  
+  const countEl = document.getElementById("logsCount")
+  countEl.innerHTML = '⏳ Clearing logs...'
+  
+  try {
+    const res = await fetch("/clear-logs", { method: "POST" })
+    const data = await res.json()
+    countEl.innerHTML = `✅ ${data.status}`
+    loadLogs()
+  } catch (err) {
+    countEl.innerHTML = '❌ Error: ' + err.message
+    console.error("clearLogs error:", err)
+  }
+}
+
+</script>
+
+</body>
+</html>

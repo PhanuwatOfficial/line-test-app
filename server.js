@@ -96,6 +96,379 @@ async function firebase_delete(path) {
   }
 }
 
+// ──────────────────────────────────────────────
+// Authentication System (Simple Token-based)
+// ──────────────────────────────────────────────
+let sessions = {} // Store active sessions in memory
+
+function createToken() {
+  return crypto.randomBytes(32).toString('hex')
+}
+
+function verifyToken(req, res, next) {
+  const authHeader = req.headers.authorization
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({ error: 'No token provided' })
+  }
+  
+  const token = authHeader.substring(7)
+  const userId = sessions[token]
+  
+  if (!userId) {
+    return res.status(401).json({ error: 'Invalid or expired token' })
+  }
+  
+  req.userId = userId
+  next()
+}
+
+// ──────────────────────────────────────────────
+// User Authentication Routes
+// ──────────────────────────────────────────────
+
+// Register
+app.post("/register", async (req, res) => {
+  try {
+    const { username, name, surname, password } = req.body
+    
+    if (!username || !name || !surname || !password) {
+      return res.status(400).json({ error: "Missing required fields" })
+    }
+    
+    addLog('info', 'Register attempt', { username })
+    
+    // เช็คว่า username มีอยู่แล้วหรือไม่
+    const existingUser = await firebase_get(`users_by_username/${username}`)
+    if (existingUser) {
+      addLog('warn', 'Username already exists', { username })
+      return res.status(400).json({ error: "Username already exists" })
+    }
+    
+    // สร้าง user object
+    const userId = `user_${Date.now()}`
+    
+    const userData = {
+      userId,
+      username,
+      name,
+      surname,
+      password: password,
+      role: 'user',
+      createdAt: new Date().toISOString(),
+      linkedFollowers: {}
+    }
+    
+    // บันทึก user ลงใน Firebase
+    await firebase_set(`users/${userId}`, userData)
+    await firebase_set(`users_by_username/${username}`, { userId })
+    
+    addLog('info', 'User registered successfully', { userId, username })
+    res.json({ status: "User registered successfully", userId })
+  } catch (err) {
+    addLog('error', 'Register error', { message: err.message })
+    res.status(500).json({ error: err.message })
+  }
+})
+
+// Login
+app.post("/login", async (req, res) => {
+  try {
+    const { username, password } = req.body
+    
+    if (!username || !password) {
+      return res.status(400).json({ error: "Username and password required" })
+    }
+    
+    addLog('info', 'Login attempt', { username })
+    
+    // หา user ด้วย username
+    const userRef = await firebase_get(`users_by_username/${username}`)
+    if (!userRef) {
+      addLog('warn', 'Login failed - user not found', { username })
+      return res.status(401).json({ error: "Invalid credentials" })
+    }
+    
+    const userId = userRef.userId
+    const user = await firebase_get(`users/${userId}`)
+    
+    // เช็คพาสเวิร์ด
+    if (user.password !== password) {
+      addLog('warn', 'Login failed - invalid password', { username })
+      return res.status(401).json({ error: "Invalid credentials" })
+    }
+    
+    // สร้าง token
+    const token = createToken()
+    sessions[token] = userId
+    
+    addLog('info', 'Login successful', { userId, username })
+    res.json({ 
+      status: "Login successful",
+      token,
+      user: {
+        userId,
+        username,
+        name: user.name,
+        surname: user.surname,
+        role: user.role || 'user'
+      }
+    })
+  } catch (err) {
+    addLog('error', 'Login error', { message: err.message })
+    res.status(500).json({ error: err.message })
+  }
+})
+
+// Get current user
+app.get("/user/me", verifyToken, async (req, res) => {
+  try {
+    const user = await firebase_get(`users/${req.userId}`)
+    if (!user) {
+      return res.status(404).json({ error: "User not found" })
+    }
+    
+    // ลบ password ออกจากการส่งกลับ
+    delete user.password
+    res.json(user)
+  } catch (err) {
+    addLog('error', 'Get user error', { message: err.message })
+    res.status(500).json({ error: err.message })
+  }
+})
+
+// Link follower to user
+app.post("/user/link-follower", verifyToken, async (req, res) => {
+  try {
+    const { followerId } = req.body
+    
+    if (!followerId) {
+      return res.status(400).json({ error: "followerId required" })
+    }
+    
+    addLog('info', 'Linking follower to user', { userId: req.userId, followerId })
+    
+    // เช็คว่า follower มีอยู่หรือไม่
+    const follower = await firebase_get(`followers/${followerId}`)
+    if (!follower) {
+      return res.status(404).json({ error: "Follower not found" })
+    }
+    
+    // บันทึก link
+    const user = await firebase_get(`users/${req.userId}`)
+    if (!user.linkedFollowers) {
+      user.linkedFollowers = {}
+    }
+    user.linkedFollowers[followerId] = {
+      displayName: follower.displayName,
+      linkedAt: new Date().toISOString()
+    }
+    
+    await firebase_set(`users/${req.userId}`, user)
+    
+    addLog('info', 'Follower linked successfully', { userId: req.userId, followerId })
+    res.json({ status: "Follower linked successfully" })
+  } catch (err) {
+    addLog('error', 'Link follower error', { message: err.message })
+    res.status(500).json({ error: err.message })
+  }
+})
+
+// Unlink follower from user
+app.post("/user/unlink-follower", verifyToken, async (req, res) => {
+  try {
+    const { followerId } = req.body
+    
+    if (!followerId) {
+      return res.status(400).json({ error: "followerId required" })
+    }
+    
+    addLog('info', 'Unlinking follower from user', { userId: req.userId, followerId })
+    
+    const user = await firebase_get(`users/${req.userId}`)
+    if (user.linkedFollowers && user.linkedFollowers[followerId]) {
+      delete user.linkedFollowers[followerId]
+      await firebase_set(`users/${req.userId}`, user)
+    }
+    
+    addLog('info', 'Follower unlinked successfully', { userId: req.userId, followerId })
+    res.json({ status: "Follower unlinked successfully" })
+  } catch (err) {
+    addLog('error', 'Unlink follower error', { message: err.message })
+    res.status(500).json({ error: err.message })
+  }
+})
+
+// Get user's linked followers
+app.get("/user/followers", verifyToken, async (req, res) => {
+  try {
+    const user = await firebase_get(`users/${req.userId}`)
+    if (!user) {
+      return res.status(404).json({ error: "User not found" })
+    }
+    
+    const linkedFollowers = user.linkedFollowers || {}
+    res.json({
+      followerCount: Object.keys(linkedFollowers).length,
+      followers: linkedFollowers
+    })
+  } catch (err) {
+    addLog('error', 'Get user followers error', { message: err.message })
+    res.status(500).json({ error: err.message })
+  }
+})
+
+// Get all users (admin only)
+app.get("/admin/users", verifyToken, async (req, res) => {
+  try {
+    const currentUser = await firebase_get(`users/${req.userId}`)
+    if (!currentUser || currentUser.role !== 'admin') {
+      return res.status(403).json({ error: "Admin access required" })
+    }
+    
+    const allUsersData = await firebase_get('users')
+    if (!allUsersData) {
+      return res.json({ users: [] })
+    }
+    
+    const users = Object.values(allUsersData).map(user => ({
+      userId: user.userId,
+      username: user.username,
+      name: user.name,
+      surname: user.surname,
+      password: user.password,
+      role: user.role || 'user',
+      createdAt: user.createdAt
+    }))
+    
+    res.json({ users })
+  } catch (err) {
+    addLog('error', 'Get all users error', { message: err.message })
+    res.status(500).json({ error: err.message })
+  }
+})
+
+// Admin: Link follower to any user
+app.post("/admin/link-follower-to-user", verifyToken, async (req, res) => {
+  try {
+    const { userId, followerId } = req.body
+    
+    if (!userId || !followerId) {
+      return res.status(400).json({ error: "userId and followerId required" })
+    }
+    
+    // ตรวจสอบว่า current user เป็น admin
+    const currentUser = await firebase_get(`users/${req.userId}`)
+    if (!currentUser || currentUser.role !== 'admin') {
+      return res.status(403).json({ error: "Admin access required" })
+    }
+    
+    addLog('info', 'Admin linking follower to user', { adminId: req.userId, userId, followerId })
+    
+    // เช็คว่า follower มีอยู่หรือไม่
+    const follower = await firebase_get(`followers/${followerId}`)
+    if (!follower) {
+      return res.status(404).json({ error: "Follower not found" })
+    }
+    
+    // เช็คว่า target user มีอยู่หรือไม่
+    const targetUser = await firebase_get(`users/${userId}`)
+    if (!targetUser) {
+      return res.status(404).json({ error: "User not found" })
+    }
+    
+    // บันทึก link
+    if (!targetUser.linkedFollowers) {
+      targetUser.linkedFollowers = {}
+    }
+    targetUser.linkedFollowers[followerId] = {
+      displayName: follower.displayName,
+      linkedAt: new Date().toISOString()
+    }
+    
+    await firebase_set(`users/${userId}`, targetUser)
+    
+    addLog('info', 'Follower linked successfully', { adminId: req.userId, userId, followerId })
+    res.json({ status: "Follower linked successfully" })
+  } catch (err) {
+    addLog('error', 'Admin link follower error', { message: err.message })
+    res.status(500).json({ error: err.message })
+  }
+})
+
+// Admin: Get all linked followers across all users
+app.get("/admin/all-linked-followers", verifyToken, async (req, res) => {
+  try {
+    const currentUser = await firebase_get(`users/${req.userId}`)
+    if (!currentUser || currentUser.role !== 'admin') {
+      return res.status(403).json({ error: "Admin access required" })
+    }
+    
+    const allUsersData = await firebase_get('users')
+    if (!allUsersData) {
+      return res.json({ linkedFollowers: [] })
+    }
+    
+    const linkedFollowers = []
+    for (let userId in allUsersData) {
+      const user = allUsersData[userId]
+      if (user.linkedFollowers && Object.keys(user.linkedFollowers).length > 0) {
+        for (let followerId in user.linkedFollowers) {
+          const link = user.linkedFollowers[followerId]
+          linkedFollowers.push({
+            userId: user.userId,
+            username: user.username,
+            name: user.name,
+            surname: user.surname,
+            followerId: followerId,
+            followerName: link.displayName,
+            linkedAt: link.linkedAt
+          })
+        }
+      }
+    }
+    
+    res.json({ linkedFollowers })
+  } catch (err) {
+    addLog('error', 'Get all linked followers error', { message: err.message })
+    res.status(500).json({ error: err.message })
+  }
+})
+
+// Admin: Unlink follower from any user
+app.post("/admin/unlink-follower-from-user", verifyToken, async (req, res) => {
+  try {
+    const { userId, followerId } = req.body
+    
+    if (!userId || !followerId) {
+      return res.status(400).json({ error: "userId and followerId required" })
+    }
+    
+    // ตรวจสอบว่า current user เป็น admin
+    const currentUser = await firebase_get(`users/${req.userId}`)
+    if (!currentUser || currentUser.role !== 'admin') {
+      return res.status(403).json({ error: "Admin access required" })
+    }
+    
+    addLog('info', 'Admin unlinking follower from user', { adminId: req.userId, userId, followerId })
+    
+    const targetUser = await firebase_get(`users/${userId}`)
+    if (!targetUser) {
+      return res.status(404).json({ error: "User not found" })
+    }
+    
+    if (targetUser.linkedFollowers && targetUser.linkedFollowers[followerId]) {
+      delete targetUser.linkedFollowers[followerId]
+      await firebase_set(`users/${userId}`, targetUser)
+    }
+    
+    addLog('info', 'Follower unlinked successfully', { adminId: req.userId, userId, followerId })
+    res.json({ status: "Follower unlinked successfully" })
+  } catch (err) {
+    addLog('error', 'Admin unlink follower error', { message: err.message })
+    res.status(500).json({ error: err.message })
+  }
+})
+
 // Webhook Route - รับ events จาก LINE
 app.post("/webhook", async (req, res) => {
   try {
@@ -462,13 +835,34 @@ app.get("/logs-history", async (req, res) => {
   }
 })
 
-// Clear logs - ลบ logs ทั้งหมด
+// Clear logs - ลบ logs ทั้งหมด และ Backup ใน Firebase
 app.post("/clear-logs", async (req, res) => {
   try {
-    addLog('info', 'Clearing logs')
+    addLog('info', 'Starting logs backup and clear process')
+    
+    // สร้าง backup object ด้วย timestamp
+    const backupData = {
+      backupDate: new Date().toISOString(),
+      logsCount: logs.length,
+      logs: logs
+    }
+    
+    // บันทึก logs ลงใน logs_Backup ใน Firebase
+    await firebase_set(`logs_Backup/${Date.now()}`, backupData)
+    addLog('info', 'Logs backed up to Firebase', { backupCount: logs.length })
+    
+    // ลบ logs จาก memory
     logs = []
+    
+    // ลบ logs จาก Firebase
     await firebase_delete("logs")
-    res.json({ status: "Logs cleared" })
+    
+    addLog('info', 'Logs cleared successfully after backup')
+    res.json({ 
+      status: "Logs cleared and backed up",
+      backupCount: backupData.logsCount,
+      backupDate: backupData.backupDate
+    })
   } catch (err) {
     addLog('error', 'Clear logs error', { message: err.message })
     res.status(500).json({ error: err.message })
