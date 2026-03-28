@@ -630,7 +630,7 @@ async function handleEvent(event) {
 // Send ให้ USER เดียว (ถ้าส่ง userId ใน request)
 app.post("/send", async (req,res)=>{
 
- const { userId, title, type, content } = req.body
+ const { userId, title, type, content, senderUserId } = req.body
  const targetUserId = userId
 
  addLog('info', 'Send message request', { title, type, userId: targetUserId })
@@ -712,8 +712,30 @@ app.post("/send", async (req,res)=>{
 
   await client.pushMessage(targetUserId, lineMessage)
 
-  addLog('info', 'Message sent successfully', { userId: targetUserId })
-  res.json({status:"sent"})
+  // Store memo in Firebase
+  const memoId = `memo_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+  const memoData = {
+    memoId,
+    title,
+    type,
+    content,
+    recipientId: targetUserId,
+    senderId: senderUserId,
+    sentAt: new Date().toISOString()
+  }
+  
+  console.log('💾 Storing memo:', memoData)
+  
+  // Store under the sender's sent memos
+  if (senderUserId) {
+    await firebase_set(`sent_memos/${senderUserId}/${memoId}`, memoData)
+    addLog('info', 'Memo stored in sent_memos', { senderId: senderUserId, memoId })
+  } else {
+    addLog('warn', 'No senderUserId provided - memo not stored in sent_memos', { targetUserId, memoId })
+  }
+
+  addLog('info', 'Message sent successfully', { userId: targetUserId, memoId, senderUserId })
+  res.json({status:"sent", memoId})
 
  }catch(err){
 
@@ -768,6 +790,36 @@ app.post("/broadcast", async (req, res) => {
     })
   } catch (err) {
     addLog('error', 'Broadcast error', { message: err.message })
+    res.status(500).json({ error: err.message })
+  }
+})
+
+// Get sent memos for current user
+app.get("/sent-memos", verifyToken, async (req, res) => {
+  try {
+    const userId = req.userId
+    console.log('🔍 Fetching sent memos for user:', userId)
+    addLog('info', 'Fetching sent memos', { userId })
+    
+    const sentMemos = await firebase_get(`sent_memos/${userId}`)
+    console.log('📦 Firebase response:', sentMemos)
+    
+    if (!sentMemos || typeof sentMemos !== 'object') {
+      addLog('info', 'Get sent memos - empty', { userId })
+      console.log('⚠️  No sent memos found for user:', userId)
+      return res.json({ memos: [], count: 0 })
+    }
+    
+    // Convert to array and sort by sentAt descending (newest first)
+    const memosArray = Object.values(sentMemos)
+    memosArray.sort((a, b) => new Date(b.sentAt) - new Date(a.sentAt))
+    
+    console.log('✅ Returning', memosArray.length, 'memos for user:', userId)
+    addLog('info', 'Sent memos retrieved successfully', { userId, count: memosArray.length })
+    res.json({ memos: memosArray, count: memosArray.length })
+  } catch (err) {
+    console.error('❌ Error fetching sent memos:', err)
+    addLog('error', 'Get sent memos error', { message: err.message })
     res.status(500).json({ error: err.message })
   }
 })

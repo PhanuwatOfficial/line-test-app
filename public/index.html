@@ -1263,6 +1263,10 @@
                     <span class="material-symbols-outlined">edit_note</span>
                     Compose Memo
                 </a>
+                <a class="nav-item" onclick="showView('sent-memos'); loadSentMemos()">
+                    <span class="material-symbols-outlined">send</span>
+                    Sent Memos
+                </a>
                 <a class="nav-item" onclick="showView('broadcast')">
                     <span class="material-symbols-outlined">campaign</span>
                     Broadcast
@@ -1351,11 +1355,11 @@
                     <div class="section-body">
                         <div class="field">
                             <label>Username</label>
-                            <input id="loginUsername" type="text" placeholder="Enter your username">
+                            <input id="loginUsername" type="text" placeholder="Enter your username" onkeypress="if(event.key==='Enter') doLogin()">
                         </div>
                         <div class="field">
                             <label>Password</label>
-                            <input id="loginPassword" type="password" placeholder="Enter your password">
+                            <input id="loginPassword" type="password" placeholder="Enter your password" onkeypress="if(event.key==='Enter') doLogin()">
                         </div>
                         <div class="btn-row">
                             <button class="btn btn-primary" onclick="doLogin()">
@@ -1656,6 +1660,57 @@
                     </div>
                 </div>
 
+            </div>
+
+            <!-- ── SENT MEMOS VIEW ────────────────── -->
+            <div id="view-sent-memos" class="view" style="display:none;">
+                <div class="page-header">
+                    <h2>Sent Memos</h2>
+                    <p>Review all memorandums you have dispatched.</p>
+                </div>
+
+                <div class="section-card">
+                    <div class="section-header">
+                        <div class="section-title">
+                            <span class="material-symbols-outlined">send</span>
+                            Memorandum History
+                            <span id="sentMemosCountBadge"
+                                style="font-family:'Noto Sans Thai',sans-serif; font-size:11px; font-weight:600; background:var(--surface); border:1px solid var(--border); border-radius:2px; padding:2px 8px; color:var(--ink-muted); margin-left:4px;"></span>
+                        </div>
+                        <div style="display:flex;gap:10px;">
+                            <button class="btn btn-ghost btn-sm" onclick="loadSentMemos()">
+                                <span class="material-symbols-outlined">refresh</span>
+                                Refresh
+                            </button>
+                        </div>
+                    </div>
+
+                    <div id="sentMemosStatus" class="status-msg" style="margin:16px 28px 0; display:none;">
+                        <span class="material-symbols-outlined"></span>
+                        <span class="msg-text"></span>
+                    </div>
+
+                    <div class="table-wrap">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Date</th>
+                                    <th>Title</th>
+                                    <th>Type</th>
+                                    <th>Recipient</th>
+                                    <th>Preview</th>
+                                </tr>
+                            </thead>
+                            <tbody id="sentMemosTbody">
+                                <tr>
+                                    <td colspan="5">
+                                        <div class="empty-state"><span class="material-symbols-outlined">send</span><p>No sent memos yet.</p></div>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
             </div>
 
             <!-- ── BROADCAST VIEW ─────────────────── -->
@@ -1960,7 +2015,7 @@
         // ──────────────────────────────────────────────
         // View Management (Must be declared before auth)
         // ──────────────────────────────────────────────
-        const views = ['login', 'register', 'manage-user', 'dashboard', 'compose', 'broadcast', 'followers', 'logs']
+        const views = ['login', 'register', 'manage-user', 'dashboard', 'compose', 'sent-memos', 'broadcast', 'followers', 'logs']
         function showView(name) {
             views.forEach(v => {
                 const el = document.getElementById('view-' + v)
@@ -1972,7 +2027,7 @@
                 el.classList.remove('active')
             })
             const activeLink = Array.from(document.querySelectorAll('.nav-item')).find(el =>
-                el.textContent.toLowerCase().includes(name === 'manage-user' ? 'account' : name)
+                el.textContent.toLowerCase().includes(name === 'manage-user' ? 'account' : name === 'sent-memos' ? 'sent' : name)
             )
             if (activeLink) activeLink.classList.add('active')
 
@@ -1984,6 +2039,7 @@
                 loadComposeRecipients()
                 updateTypeCheckboxStyle()
             }
+            if (name === 'sent-memos' && currentUser) loadSentMemos()
             if (name === 'followers' && currentUser) {
                 loadFollowers()
                 // Show admin section if user is admin
@@ -2570,6 +2626,7 @@
             if (!text) { setStatus('statusSingleSend', 'error', 'error', 'Please enter a message body.'); return }
             if (recipients.length === 0) { setStatus('statusSingleSend', 'error', 'error', 'Please select at least one recipient.'); return }
 
+            console.log('📤 Sending memo:', { title, type, recipients, senderId: currentUser?.userId })
             setStatus('statusSingleSend', 'loading', 'hourglass_empty', `Dispatching to ${recipients.length} ${recipients.length === 1 ? 'recipient' : 'recipients'}...`)
             try {
                 // Send to each recipient
@@ -2578,15 +2635,18 @@
 
                 for (let recipientId of recipients) {
                     try {
+                        const sendData = {
+                            userId: recipientId,
+                            title: title,
+                            type: type,
+                            content: text,
+                            senderUserId: currentUser?.userId
+                        }
+                        console.log('📨 Request body:', sendData)
                         const res = await fetch('/send', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({
-                                userId: recipientId,
-                                title: title,
-                                type: type,
-                                content: text
-                            })
+                            body: JSON.stringify(sendData)
                         })
                         if (res.ok) {
                             successCount++
@@ -2649,7 +2709,79 @@
             }
         }
 
+        // ── Load Sent Memos ─────────────────────────
+        async function loadSentMemos() {
+            const tbody = document.getElementById('sentMemosTbody')
+            const badge = document.getElementById('sentMemosCountBadge')
+            const statusEl = document.getElementById('sentMemosStatus')
+
+            tbody.innerHTML = `<tr><td colspan="5"><div class="empty-state"><span class="material-symbols-outlined" style="animation:spin 1s linear infinite;display:inline-block;">refresh</span><p>Loading sent memos...</p></div></td></tr>`
+            statusEl.className = 'status-msg loading show'
+            statusEl.querySelector('.material-symbols-outlined').textContent = 'hourglass_empty'
+            statusEl.querySelector('.msg-text').textContent = 'Fetching sent memorandums...'
+
+            try {
+                console.log('📥 Fetching sent memos with token:', authToken?.substring(0, 20) + '...')
+                const res = await fetch('/sent-memos', {
+                    headers: { 'Authorization': `Bearer ${authToken}` }
+                })
+                const data = await res.json()
+                console.log('📬 Sent memos response:', data)
+
+                if (!res.ok) {
+                    statusEl.className = 'status-msg error show'
+                    statusEl.querySelector('.material-symbols-outlined').textContent = 'error'
+                    statusEl.querySelector('.msg-text').textContent = data.error || 'Failed to load sent memos.'
+                    console.error('❌ Error loading sent memos (HTTP ' + res.status + '):', data)
+                    return
+                }
+
+                badge.textContent = `${data.count} sent`
+                statusEl.className = 'status-msg'
+
+                if (data.count === 0) {
+                    tbody.innerHTML = `<tr><td colspan="5"><div class="empty-state"><span class="material-symbols-outlined">send</span><p>No sent memos yet.</p></div></td></tr>`
+                    return
+                }
+
+                let rows = ''
+                for (let memo of data.memos) {
+                    const date = new Date(memo.sentAt)
+                    const dateStr = date.toLocaleDateString('th-TH', { year: 'numeric', month: 'short', day: 'numeric' })
+                    const timeStr = date.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })
+                    const preview = memo.content.substring(0, 50) + (memo.content.length > 50 ? '...' : '')
+                    
+                    rows += `<tr>
+          <td style="font-size:12px;">
+            <span style="color:var(--ink-muted);">
+              ${dateStr}<br>
+              <span style="font-size:11px;">${timeStr}</span>
+            </span>
+          </td>
+          <td>
+            <div style="font-weight:500;">${escHtml(memo.title)}</div>
+          </td>
+          <td>
+            <span class="badge badge-pending">${escHtml(memo.type || 'memo')}</span>
+          </td>
+          <td style="font-size:12px;color:var(--ink-muted);">
+            ${escHtml(memo.recipientId.substring(0, 20))}
+          </td>
+          <td style="font-size:12px;color:var(--ink-faint);max-width:200px;">
+            <span title="${escHtml(memo.content)}">${escHtml(preview)}</span>
+          </td>
+        </tr>`
+                }
+                tbody.innerHTML = rows
+            } catch (e) {
+                statusEl.className = 'status-msg error show'
+                statusEl.querySelector('.material-symbols-outlined').textContent = 'error'
+                statusEl.querySelector('.msg-text').textContent = e.message
+            }
+        }
+
         // ── Load Followers ──────────────────────────
+
         async function loadFollowers() {
             const tbody = document.getElementById('followersTbody')
             const badge = document.getElementById('followerCountBadge')
