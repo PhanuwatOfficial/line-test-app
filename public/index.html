@@ -850,6 +850,67 @@
             transition: width 0.4s;
         }
 
+        /* ── Notification Item ────────────────────── */
+        .notification-item {
+            padding: 12px 16px;
+            border-bottom: 1px solid var(--border);
+            transition: background 0.15s;
+            cursor: pointer;
+            position: relative;
+        }
+
+        .notification-item:hover {
+            background: var(--surface);
+        }
+
+        .notification-item.unread {
+            background: rgba(26, 39, 64, 0.04);
+        }
+
+        .notification-item-title {
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--ink);
+            margin-bottom: 4px;
+        }
+
+        .notification-item-message {
+            font-size: 12px;
+            color: var(--ink-muted);
+            margin-bottom: 6px;
+            line-height: 1.4;
+        }
+
+        .notification-item-time {
+            font-size: 10px;
+            color: var(--ink-faint);
+        }
+
+        .notification-item-close {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            background: none;
+            border: none;
+            color: var(--ink-faint);
+            cursor: pointer;
+            padding: 4px;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            border-radius: var(--radius);
+            transition: background 0.15s;
+        }
+
+        .notification-item:hover .notification-item-close {
+            display: flex;
+        }
+
+        .notification-item-close:hover {
+            background: var(--surface);
+            color: var(--ink);
+        }
+
         /* ── Mobile Menu Toggle ───────────────────── */
         .mobile-menu-toggle {
             display: none;
@@ -1326,9 +1387,23 @@
                 </div>
             </div>
             <div class="topbar-right">
-                <button class="icon-btn" title="Notifications">
-                    <span class="material-symbols-outlined">notifications</span>
-                </button>
+                <div style="position: relative;">
+                    <button class="icon-btn" title="Notifications" onclick="toggleNotificationPanel()">
+                        <span class="material-symbols-outlined">notifications</span>
+                        <span id="notificationBadge" style="position: absolute; top: -4px; right: -4px; background: var(--red); color: #fff; font-size: 10px; font-weight: 700; width: 18px; height: 18px; border-radius: 50%; display: none; align-items: center; justify-content: center; line-height: 1;">0</span>
+                    </button>
+                    <div id="notificationPanel" style="display: none; flex-direction: column; position: absolute; top: 100%; right: 0; width: 360px; max-height: 400px; background: var(--paper); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow-lg); z-index: 1000; overflow: hidden; margin-top: 4px;">
+                        <div style="padding: 16px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between;">
+                            <h3 style="margin: 0; font-size: 14px; font-weight: 600; color: var(--ink);">แจ้งเตือน</h3>
+                            <button class="icon-btn" onclick="clearAllNotifications()" style="padding: 4px;" title="Clear all">
+                                <span class="material-symbols-outlined" style="font-size: 16px;">clear_all</span>
+                            </button>
+                        </div>
+                        <div id="notificationList" style="max-height: 320px; overflow-y: auto;">
+                            <div style="padding: 20px; text-align: center; color: var(--ink-faint); font-size: 13px;">ไม่มีแจ้งเตือน</div>
+                        </div>
+                    </div>
+                </div>
                 <button class="icon-btn" title="Settings">
                     <span class="material-symbols-outlined">settings</span>
                 </button>
@@ -1981,6 +2056,243 @@
 
     <script>
         // ──────────────────────────────────────────────
+        // Notification System
+        // ──────────────────────────────────────────────
+        let notifications = []
+        let notificationsLoaded = false
+        let notificationRefreshInterval = null
+
+        async function loadNotificationsFromFirebase() {
+            if (!authToken) return
+            
+            try {
+                const res = await fetch('/notifications', {
+                    headers: { 'Authorization': `Bearer ${authToken}` }
+                })
+                if (res.ok) {
+                    const data = await res.json()
+                    notifications = data.notifications || []
+                    console.log('✅ Notifications loaded:', notifications.length)
+                    updateNotificationUI()
+                    notificationsLoaded = true
+                } else {
+                    console.warn('Failed to load notifications:', res.status)
+                    notifications = []
+                    updateNotificationUI()
+                    notificationsLoaded = true
+                }
+            } catch (e) {
+                console.error('❌ Error loading notifications:', e)
+                notifications = []
+                updateNotificationUI()
+                notificationsLoaded = true
+            }
+        }
+        
+        // Auto-refresh notifications every 30 seconds when logged in
+        function startNotificationRefresh() {
+            if (notificationRefreshInterval) clearInterval(notificationRefreshInterval)
+            notificationRefreshInterval = setInterval(() => {
+                if (authToken && currentUser) {
+                    loadNotificationsFromFirebase()
+                }
+            }, 30000) // Refresh every 30 seconds
+            console.log('🔄 Notification auto-refresh started')
+        }
+        
+        function stopNotificationRefresh() {
+            if (notificationRefreshInterval) {
+                clearInterval(notificationRefreshInterval)
+                notificationRefreshInterval = null
+                console.log('⏹️ Notification auto-refresh stopped')
+            }
+        }
+
+        async function addNotification(title, message, type = 'info') {
+            const notification = {
+                id: Date.now(),
+                title: title,
+                message: message,
+                type: type,
+                read: false,
+                timestamp: new Date()
+            }
+
+            // Save to Firebase
+            if (authToken) {
+                try {
+                    const res = await fetch('/notifications', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${authToken}`
+                        },
+                        body: JSON.stringify({ title, message, type })
+                    })
+                    if (res.ok) {
+                        const data = await res.json()
+                        notification.id = data.notification.id
+                    }
+                } catch (e) {
+                    console.error('Error saving notification:', e)
+                }
+            }
+
+            notifications.unshift(notification)
+            updateNotificationUI()
+        }
+
+        function updateNotificationUI() {
+            const list = document.getElementById('notificationList')
+            const badge = document.getElementById('notificationBadge')
+            
+            // Ensure notifications array is valid
+            if (!Array.isArray(notifications)) {
+                notifications = []
+            }
+            
+            const unreadCount = notifications.filter(n => !n.read).length
+            console.log('🔔 Updating badge - Total:', notifications.length, 'Unread:', unreadCount)
+
+            // Update badge
+            if (unreadCount > 0) {
+                badge.textContent = unreadCount > 9 ? '9+' : unreadCount
+                badge.style.display = 'flex'
+                console.log('✅ Badge displayed with count:', badge.textContent)
+            } else {
+                badge.style.display = 'none'
+                console.log('❌ Badge hidden (no unread)')
+            }
+
+            // Update list
+            if (notifications.length === 0) {
+                list.innerHTML = '<div style="padding: 20px; text-align: center; color: var(--ink-faint); font-size: 13px;">ไม่มีแจ้งเตือน</div>'
+                return
+            }
+
+            let html = ''
+            for (let notif of notifications.slice(0, 10)) {
+                let timestamp = notif.timestamp
+                if (typeof timestamp === 'string') {
+                    timestamp = new Date(timestamp)
+                }
+                const timeStr = timestamp.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })
+                const dateStr = timestamp.toLocaleDateString('th-TH', { day: 'numeric', month: 'short' })
+                const displayTime = timestamp.toDateString() === new Date().toDateString() ? timeStr : dateStr
+                const icon = notif.type === 'success' ? 'check_circle' : notif.type === 'error' ? 'error' : 'info'
+                const unreadClass = notif.read ? '' : 'unread'
+                const iconColor = notif.type === 'success' ? 'var(--green)' : notif.type === 'error' ? 'var(--red)' : 'var(--blue)'
+                
+                // Extract sender name from message if available
+                let messageDisplay = escHtml(notif.message).replace(/From: /, '<strong>ผู้ส่ง: </strong>')
+                messageDisplay = messageDisplay.replace(/จาก /, '<strong>จาก: </strong>')
+
+                html += `
+                    <div class="notification-item ${unreadClass}" onclick="markNotificationAsRead('${notif.id}')">
+                        <div style="display: flex; gap: 10px;">
+                            <span class="material-symbols-outlined" style="font-size: 18px; color: ${iconColor}; flex-shrink: 0;">${icon}</span>
+                            <div style="flex: 1; min-width: 0;">
+                                <div class="notification-item-title">${escHtml(notif.title)}</div>
+                                <div class="notification-item-message">${messageDisplay}</div>
+                                <div class="notification-item-time">${displayTime}</div>
+                            </div>
+                        </div>
+                        <button class="notification-item-close" onclick="event.stopPropagation(); removeNotification('${notif.id}')">
+                            <span class="material-symbols-outlined" style="font-size: 14px;">close</span>
+                        </button>
+                    </div>
+                `
+            }
+            list.innerHTML = html
+        }
+
+        function toggleNotificationPanel() {
+            const panel = document.getElementById('notificationPanel')
+            const isVisible = panel.style.display === 'flex'
+            panel.style.display = isVisible ? 'none' : 'flex'
+
+            // Mark all as read when opening
+            if (!isVisible) {
+                notifications.forEach(n => {
+                    if (!n.read) {
+                        markNotificationAsRead(n.id)
+                    }
+                })
+            }
+        }
+
+        async function markNotificationAsRead(id) {
+            const notif = notifications.find(n => String(n.id) === String(id))
+            if (!notif || notif.read) return
+            
+            console.log('📖 Marking notification as read:', id)
+            
+            // Update in Firebase
+            if (authToken) {
+                try {
+                    await fetch(`/notifications/${id}`, {
+                        method: 'PUT',
+                        headers: { 'Authorization': `Bearer ${authToken}` }
+                    })
+                } catch (e) {
+                    console.error('❌ Error marking notification as read:', e)
+                }
+            }
+            
+            notif.read = true
+            updateNotificationUI()
+        }
+
+        async function removeNotification(id) {
+            console.log('🗑️ Removing notification:', id)
+            
+            // Delete from Firebase
+            if (authToken) {
+                try {
+                    await fetch(`/notifications/${id}`, {
+                        method: 'DELETE',
+                        headers: { 'Authorization': `Bearer ${authToken}` }
+                    })
+                } catch (e) {
+                    console.error('❌ Error deleting notification:', e)
+                }
+            }
+            
+            notifications = notifications.filter(n => String(n.id) !== String(id))
+            updateNotificationUI()
+        }
+
+        async function clearAllNotifications() {
+            console.log('🗑️🗑️ Clearing all notifications...')
+            
+            // Delete all from Firebase
+            if (authToken) {
+                try {
+                    await fetch('/notifications', {
+                        method: 'DELETE',
+                        headers: { 'Authorization': `Bearer ${authToken}` }
+                    })
+                } catch (e) {
+                    console.error('❌ Error clearing notifications:', e)
+                }
+            }
+            
+            notifications = []
+            updateNotificationUI()
+            document.getElementById('notificationPanel').style.display = 'none'
+            console.log('✅ All notifications cleared')
+        }
+
+        // Close notification panel when clicking outside
+        document.addEventListener('click', function(e) {
+            const panel = document.getElementById('notificationPanel')
+            const notifSection = panel?.parentElement
+            if (panel && !notifSection?.contains(e.target)) {
+                panel.style.display = 'none'
+            }
+        })
+
+        // ──────────────────────────────────────────────
         // Mobile Sidebar Toggle
         // ──────────────────────────────────────────────
         function closeMobileSidebar() {
@@ -2105,6 +2417,19 @@
                 document.getElementById('topbarUserName').textContent = `${currentUser.name} ${currentUser.surname}`
                 document.getElementById('topbarUserRole').textContent = currentUser.role || 'Bot Manager'
                 updateAvatarDisplay()
+                
+                console.log('👤 User logged in:', currentUser.username)
+                
+                // Reset and reload notifications for logged-in user
+                notificationsLoaded = false
+                notifications = []
+                updateNotificationUI() // Ensure badge is cleared first
+                
+                // Load notifications from Firebase
+                loadNotificationsFromFirebase()
+                
+                // Start auto-refresh for notifications
+                startNotificationRefresh()
             }
         }
 
@@ -2249,12 +2574,18 @@
             }
         }
 
+        //ทำให้ login ค้างไว้ เมื่อรีเฟรชหน้าเว็บจะได้ไม่ต้อง login ใหม่ทุกครั้ง โดยใช้ localStorage 
+
         async function logout() {
             const confirmed = await showConfirmModal('Sign out from your account?', 'Sign Out')
             if (!confirmed) return
             localStorage.removeItem('authToken')
             authToken = null
             currentUser = null
+            notifications = []
+            notificationsLoaded = false
+            stopNotificationRefresh()
+            updateNotificationUI()
             updateUIForLoggedOut()
             showView('login')
         }
@@ -2756,12 +3087,25 @@
             if (!text) { setStatus('statusSingleSend', 'error', 'error', 'Please enter a message body.'); return }
             if (recipients.length === 0) { setStatus('statusSingleSend', 'error', 'error', 'Please select at least one recipient.'); return }
 
-            console.log('📤 Sending memo:', { title, type, recipients, senderId: currentUser?.userId })
+            // Build a map of recipient IDs to their display names from the table
+            const recipientNameMap = {}
+            const recipientRows = document.querySelectorAll('#recipientsList table tbody tr')
+            recipientRows.forEach(row => {
+                const checkbox = row.querySelector('.recipient-checkbox')
+                if (checkbox) {
+                    // Get user name (name + surname) from column index 1, not follower name
+                    const userName = row.querySelectorAll('td')[1]?.textContent.trim() || 'Unknown'
+                    recipientNameMap[checkbox.value] = userName
+                }
+            })
+            
+            console.log('📤 Sending memo:', { title, type, recipients, senderId: currentUser?.userId, recipientNameMap })
             setStatus('statusSingleSend', 'loading', 'hourglass_empty', `Dispatching to ${recipients.length} ${recipients.length === 1 ? 'recipient' : 'recipients'}...`)
             try {
                 // Send to each recipient
                 let successCount = 0
                 let failCount = 0
+                let successfulRecipientNames = []
 
                 for (let recipientId of recipients) {
                     try {
@@ -2780,6 +3124,8 @@
                         })
                         if (res.ok) {
                             successCount++
+                            const recipientName = recipientNameMap[recipientId] || 'Unknown'
+                            successfulRecipientNames.push(recipientName)
                         } else {
                             failCount++
                         }
@@ -2790,12 +3136,30 @@
 
                 if (failCount === 0) {
                     setStatus('statusSingleSend', 'success', 'check_circle', `Memorandum sent to ${successCount} ${successCount === 1 ? 'recipient' : 'recipients'} successfully!`)
+                    // Add notification with recipient names
+                    const recipientDisplay = successfulRecipientNames.join(', ')
+                    addNotification(
+                        'ส่ง Memo สำเร็จ',
+                        `ส่ง "${title}" ไปยัง ${recipientDisplay}`,
+                        'success'
+                    )
                     clearCompose()
                     sentCount++
                 } else if (successCount > 0) {
                     setStatus('statusSingleSend', 'warn', 'warning', `Sent to ${successCount} recipients, failed for ${failCount}`)
+                    const recipientDisplay = successfulRecipientNames.join(', ')
+                    addNotification(
+                        'ส่ง Memo บางส่วนสำเร็จ',
+                        `ส่งไปยัง ${recipientDisplay} (ล้มเหลว ${failCount})`,
+                        'info'
+                    )
                 } else {
                     setStatus('statusSingleSend', 'error', 'error', 'Failed to send to all recipients')
+                    addNotification(
+                        'ส่ง Memo ล้มเหลว',
+                        `ไม่สามารถส่ง "${title}" ได้`,
+                        'error'
+                    )
                 }
             } catch (e) {
                 setStatus('statusSingleSend', 'error', 'error', e.message)
@@ -3053,6 +3417,39 @@
         }
 
         // ── Dashboard Refresh ───────────────────────
+        let lastReceivedMemosCount = 0
+
+        async function checkReceivedMemos() {
+            try {
+                const res = await fetch('/received-memos', {
+                    headers: { 'Authorization': `Bearer ${authToken}` }
+                })
+                if (res.ok) {
+                    const data = await res.json()
+                    const currentCount = data.count || 0
+                    
+                    // Check if there are new memos since last check
+                    if (currentCount > lastReceivedMemosCount && data.memos && data.memos.length > 0) {
+                        // Notify about new received memos
+                        const newMemos = data.memos.slice(0, currentCount - lastReceivedMemosCount)
+                        for (let memo of newMemos) {
+                            if (memo.unread) {
+                                const senderName = memo.senderName || 'ผู้ส่ง'
+                                addNotification(
+                                    'ได้รับ Memo ใหม่',
+                                    `"${memo.title}" จาก ${senderName}`,
+                                    'info'
+                                )
+                            }
+                        }
+                    }
+                    lastReceivedMemosCount = currentCount
+                }
+            } catch (e) {
+                // Endpoint might not exist, ignore
+            }
+        }
+
         async function refreshDashboard() {
             // Fetch sent memos count for current user
             try {
@@ -3064,6 +3461,9 @@
                     document.getElementById('stat-sent').textContent = data.count || 0
                 }
             } catch (e) { }
+            
+            // Check for received memos
+            checkReceivedMemos()
             
             loadLogs()
             // followers count
@@ -3093,8 +3493,8 @@
                 
                 modalTitle.textContent = title
                 modalMessage.textContent = message
-                confirmBtn.textContent = 'ยืนยัน'
-                cancelBtn.textContent = 'ยกเลิก'
+                confirmBtn.textContent = 'Confirm'
+                cancelBtn.textContent = 'Cancel'
                 confirmBtn.style.display = 'inline-block'
                 cancelBtn.style.display = 'inline-block'
                 
@@ -3149,8 +3549,8 @@
                 <p id="modalMessage" style="font-size: 14px; color: var(--ink); line-height: 1.5; margin: 0;">Are you sure?</p>
             </div>
             <div style="padding: 16px 24px; border-top: 1px solid var(--border); display: flex; gap: 12px; justify-content: flex-end;">
-                <button id="modalCancelBtn" onclick="closeCustomModal(false)" style="padding: 10px 24px; border: 1px solid var(--border); background: var(--paper); color: var(--ink); border-radius: var(--radius); cursor: pointer; font-size: 14px; font-weight: 500; transition: all 0.15s; outline: none;" onmouseover="this.style.background='var(--surface)'" onmouseout="this.style.background='var(--paper)'">ยกเลิก</button>
-                <button id="modalConfirmBtn" onclick="closeCustomModal(true)" style="padding: 10px 24px; background: var(--accent); color: #fff; border: none; border-radius: var(--radius); cursor: pointer; font-size: 14px; font-weight: 600; transition: all 0.15s; outline: none;" onmouseover="this.style.opacity='0.9'" onmouseout="this.style.opacity='1'">ยืนยัน</button>
+                <button id="modalCancelBtn" onclick="closeCustomModal(false)" style="padding: 10px 24px; border: 1px solid var(--border); background: var(--paper); color: var(--ink); border-radius: var(--radius); cursor: pointer; font-size: 14px; font-weight: 500; transition: all 0.15s; outline: none;" onmouseover="this.style.background='var(--surface)'" onmouseout="this.style.background='var(--paper)'">Cancle</button>
+                <button id="modalConfirmBtn" onclick="closeCustomModal(true)" style="padding: 10px 24px; background: var(--accent); color: #fff; border: none; border-radius: var(--radius); cursor: pointer; font-size: 14px; font-weight: 600; transition: all 0.15s; outline: none;" onmouseover="this.style.opacity='0.9'" onmouseout="this.style.opacity='1'">Confirm</button>
             </div>
         </div>
     </div>

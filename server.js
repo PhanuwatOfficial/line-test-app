@@ -751,6 +751,29 @@ app.post("/send", async (req,res)=>{
   if (senderUserId) {
     await firebase_set(`sent_memos/${senderUserId}/${memoId}`, memoData)
     addLog('info', 'Memo stored in sent_memos', { senderId: senderUserId, memoId })
+    
+    // Create notification for recipient
+    try {
+      const sender = await firebase_get(`users/${senderUserId}`)
+      const senderFullName = sender ? `${sender.name} ${sender.surname}`.trim() : 'ผู้ส่ง'
+      
+      const notification = {
+        id: Date.now().toString(),
+        title: 'ได้รับ Memo ใหม่',
+        message: `"${title}" จาก ${senderFullName}`,
+        type: 'info',
+        read: false,
+        timestamp: new Date().toISOString(),
+        memoId: memoId,
+        senderId: senderUserId,
+        recipientId: targetUserId
+      }
+      
+      await firebase_set(`notifications/${targetUserId}/${notification.id}`, notification)
+      addLog('info', 'Notification created for recipient', { recipientId: targetUserId, memoId })
+    } catch (err) {
+      addLog('warn', 'Failed to create notification for recipient', { recipientId: targetUserId, error: err.message })
+    }
   } else {
     addLog('warn', 'No senderUserId provided - memo not stored in sent_memos', { targetUserId, memoId })
   }
@@ -841,6 +864,117 @@ app.get("/sent-memos", verifyToken, async (req, res) => {
   } catch (err) {
     console.error('❌ Error fetching sent memos:', err)
     addLog('error', 'Get sent memos error', { message: err.message })
+    res.status(500).json({ error: err.message })
+  }
+})
+
+// ── Notification Endpoints ──────────────────────────────
+// Get all notifications for a user
+app.get("/notifications", verifyToken, async (req, res) => {
+  try {
+    const userId = req.userId
+    addLog('info', 'Fetching notifications', { userId })
+    
+    const notificationsData = await firebase_get(`notifications/${userId}`)
+    
+    if (!notificationsData || typeof notificationsData !== 'object') {
+      addLog('info', 'Get notifications - empty', { userId })
+      return res.json({ notifications: [], count: 0 })
+    }
+    
+    // Convert to array and sort by timestamp descending (newest first)
+    const notificationsArray = Object.values(notificationsData)
+    notificationsArray.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
+    
+    addLog('info', 'Notifications retrieved', { userId, count: notificationsArray.length })
+    res.json({ notifications: notificationsArray, count: notificationsArray.length })
+  } catch (err) {
+    addLog('error', 'Get notifications error', { message: err.message })
+    res.status(500).json({ error: err.message })
+  }
+})
+
+// Create a new notification
+app.post("/notifications", verifyToken, async (req, res) => {
+  try {
+    const userId = req.userId
+    const { title, message, type } = req.body
+    
+    if (!title || !message) {
+      return res.status(400).json({ error: 'Title and message required' })
+    }
+    
+    const notificationId = Date.now().toString()
+    const notification = {
+      id: notificationId,
+      title: title,
+      message: message,
+      type: type || 'info',
+      read: false,
+      timestamp: new Date().toISOString()
+    }
+    
+    await firebase_set(`notifications/${userId}/${notificationId}`, notification)
+    addLog('info', 'Notification created', { userId, notificationId })
+    
+    res.json({ status: 'Notification saved', notification })
+  } catch (err) {
+    addLog('error', 'Create notification error', { message: err.message })
+    res.status(500).json({ error: err.message })
+  }
+})
+
+// Mark notification as read
+app.put("/notifications/:id", verifyToken, async (req, res) => {
+  try {
+    const userId = req.userId
+    const notificationId = req.params.id
+    
+    const notification = await firebase_get(`notifications/${userId}/${notificationId}`)
+    if (!notification) {
+      return res.status(404).json({ error: 'Notification not found' })
+    }
+    
+    await firebase_set(`notifications/${userId}/${notificationId}`, {
+      ...notification,
+      read: true
+    })
+    
+    addLog('info', 'Notification marked as read', { userId, notificationId })
+    res.json({ status: 'Notification updated', notification: { ...notification, read: true } })
+  } catch (err) {
+    addLog('error', 'Update notification error', { message: err.message })
+    res.status(500).json({ error: err.message })
+  }
+})
+
+// Delete a notification
+app.delete("/notifications/:id", verifyToken, async (req, res) => {
+  try {
+    const userId = req.userId
+    const notificationId = req.params.id
+    
+    await firebase_delete(`notifications/${userId}/${notificationId}`)
+    addLog('info', 'Notification deleted', { userId, notificationId })
+    
+    res.json({ status: 'Notification deleted' })
+  } catch (err) {
+    addLog('error', 'Delete notification error', { message: err.message })
+    res.status(500).json({ error: err.message })
+  }
+})
+
+// Delete all notifications
+app.delete("/notifications", verifyToken, async (req, res) => {
+  try {
+    const userId = req.userId
+    
+    await firebase_delete(`notifications/${userId}`)
+    addLog('info', 'All notifications deleted', { userId })
+    
+    res.json({ status: 'All notifications cleared' })
+  } catch (err) {
+    addLog('error', 'Clear notifications error', { message: err.message })
     res.status(500).json({ error: err.message })
   }
 })
