@@ -1337,7 +1337,7 @@
                     <div class="name" id="topbarUserName">ชื่อผู้ใช้</div>
                     <div class="role" id="topbarUserRole">ตำแหน่ง</div>
                 </div>
-                <div class="avatar">LA</div>
+                <div class="avatar" id="topbarAvatar"></div>
             </div>
         </header>
 
@@ -2104,7 +2104,59 @@
             if (currentUser) {
                 document.getElementById('topbarUserName').textContent = `${currentUser.name} ${currentUser.surname}`
                 document.getElementById('topbarUserRole').textContent = currentUser.role || 'Bot Manager'
+                updateAvatarDisplay()
             }
+        }
+
+        function getInitials(name, surname) {
+            const firstLetter = name ? name.charAt(0).toUpperCase() : ''
+            const lastLetter = surname ? surname.charAt(0).toUpperCase() : ''
+            return firstLetter + lastLetter || 'U'
+        }
+
+        async function updateAvatarDisplay() {
+            try {
+                // Get linked followers for current user
+                const res = await fetch('/user/followers', {
+                    headers: { 'Authorization': `Bearer ${authToken}` }
+                })
+                if (res.ok) {
+                    const data = await res.json()
+                    const linkedFollowerIds = Object.keys(data.followers || {})
+                    
+                    // Check if user has any linked followers
+                    if (linkedFollowerIds.length > 0) {
+                        // Fetch all followers data to get picture URLs
+                        const followerRes = await fetch('/followers')
+                        if (followerRes.ok) {
+                            const followerData = await followerRes.json()
+                            const allFollowers = followerData.followers || {}
+                            
+                            // Get the first linked follower's picture URL
+                            const firstFollowerId = linkedFollowerIds[0]
+                            const firstFollower = allFollowers[firstFollowerId]
+                            
+                            if (firstFollower && firstFollower.pictureUrl) {
+                                // Display image if available
+                                const avatar = document.getElementById('topbarAvatar')
+                                avatar.style.backgroundImage = `url('${firstFollower.pictureUrl}')`
+                                avatar.style.backgroundSize = 'cover'
+                                avatar.style.backgroundPosition = 'center'
+                                avatar.textContent = ''
+                                return
+                            }
+                        }
+                    }
+                }
+            } catch (e) {
+                // If error, fall back to initials
+            }
+            
+            // Fall back to initials if no linked followers or no picture
+            const initials = getInitials(currentUser.name, currentUser.surname)
+            const avatar = document.getElementById('topbarAvatar')
+            avatar.style.backgroundImage = 'none'
+            avatar.textContent = initials
         }
 
         function updateUIForLoggedOut() {
@@ -2113,6 +2165,13 @@
             document.getElementById('createSection').style.display = 'none'
             document.getElementById('userSection').style.display = 'none'
             document.getElementById('guestSection').style.display = 'block'
+            
+            // Reset topbar user info
+            document.getElementById('topbarUserName').textContent = 'ชื่อผู้ใช้'
+            document.getElementById('topbarUserRole').textContent = 'ตำแหน่ง'
+            const avatar = document.getElementById('topbarAvatar')
+            avatar.style.backgroundImage = 'none'
+            avatar.textContent = ''
         }
 
         async function doRegister() {
@@ -2190,14 +2249,22 @@
             }
         }
 
-        function logout() {
-            if (!confirm('Sign out from your account?')) return
+        async function logout() {
+            const confirmed = await showConfirmModal('Sign out from your account?', 'Sign Out')
+            if (!confirmed) return
             localStorage.removeItem('authToken')
             authToken = null
             currentUser = null
             updateUIForLoggedOut()
             showView('login')
         }
+
+        /*confirm  เปลี่ยนให้เป็น custom modal แทน  popup ของ browser
+
+        ตัวอย่างโค้ด
+
+        
+        */
 
         async function changePassword() {
             const currentPassword = document.getElementById('currentPassword').value.trim()
@@ -2402,7 +2469,8 @@
         }
 
         async function unlinkFollower(followerId) {
-            if (!confirm('Unlink this follower?')) return
+            const confirmed = await showConfirmModal('Unlink this follower?', 'Unlink')
+            if (!confirmed) return
             try {
                 const res = await fetch('/user/unlink-follower', {
                     method: 'POST',
@@ -2414,18 +2482,19 @@
                 })
                 const data = await res.json()
                 if (!res.ok) {
-                    alert('Error: ' + (data.error || 'Failed to unlink.'))
+                    await showAlertModal('Error: ' + (data.error || 'Failed to unlink.'), 'Error')
                     return
                 }
                 await loadLinkedFollowers()
                 await loadAvailableFollowersForLinking()
             } catch (err) {
-                alert('Error: ' + err.message)
+                await showAlertModal('Error: ' + err.message, 'Error')
             }
         }
 
         async function unlinkFollowerByAdmin(userId, followerId) {
-            if (!confirm('Unlink this follower?')) return
+            const confirmed = await showConfirmModal('Unlink this follower?', 'Unlink')
+            if (!confirmed) return
             try {
                 const res = await fetch('/admin/unlink-follower-from-user', {
                     method: 'POST',
@@ -2437,13 +2506,13 @@
                 })
                 const data = await res.json()
                 if (!res.ok) {
-                    alert('Error: ' + (data.error || 'Failed to unlink.'))
+                    await showAlertModal('Error: ' + (data.error || 'Failed to unlink.'), 'Error')
                     return
                 }
                 await loadLinkedFollowers()
                 await loadAvailableFollowersForLinking()
             } catch (err) {
-                alert('Error: ' + err.message)
+                await showAlertModal('Error: ' + err.message, 'Error')
             }
         }
 
@@ -2915,9 +2984,14 @@
             try {
                 const res = await fetch(`/refresh-profile/${userId}`, { method: 'POST' })
                 const data = await res.json()
-                if (!res.ok) { alert('Error: ' + data.error); return }
+                if (!res.ok) { 
+                    await showAlertModal('Error: ' + data.error, 'Profile Refresh Failed')
+                    return 
+                }
                 loadFollowers()
-            } catch (e) { alert('Error: ' + e.message) }
+            } catch (e) { 
+                await showAlertModal('Error: ' + e.message, 'Profile Refresh Failed')
+            }
         }
 
         // ── Logs ────────────────────────────────────
@@ -2962,14 +3036,20 @@
         }
 
         async function clearLogs() {
-            if (!confirm('Clear all system logs? They will be backed up to Firebase.')) return
+            const confirmed = await showConfirmModal('Clear all system logs? They will be backed up to Firebase.', 'Clear Logs')
+            if (!confirmed) return
             try {
                 const res = await fetch('/clear-logs', { method: 'POST' })
                 const data = await res.json()
-                if (!res.ok) { alert('Error: ' + data.error); return }
+                if (!res.ok) { 
+                    await showAlertModal('Error: ' + data.error, 'Clear Logs Failed')
+                    return 
+                }
                 loadLogs()
-                alert(`✓ Logs cleared and backed up\n${data.backupCount} entries saved`)
-            } catch (e) { alert('Error: ' + e.message) }
+                await showAlertModal(`✓ Logs cleared and backed up\n${data.backupCount} entries saved`, 'Success')
+            } catch (e) { 
+                await showAlertModal('Error: ' + e.message, 'Clear Logs Failed')
+            }
         }
 
         // ── Dashboard Refresh ───────────────────────
@@ -2999,12 +3079,82 @@
             return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
         }
 
+        // ── Custom Modal System ────────────────────
+        let modalResolver = null
+
+        function showConfirmModal(message, title = 'Confirmation') {
+            return new Promise((resolve) => {
+                modalResolver = resolve
+                const modal = document.getElementById('customModal')
+                const modalTitle = document.getElementById('modalTitle')
+                const modalMessage = document.getElementById('modalMessage')
+                const confirmBtn = document.getElementById('modalConfirmBtn')
+                const cancelBtn = document.getElementById('modalCancelBtn')
+                
+                modalTitle.textContent = title
+                modalMessage.textContent = message
+                confirmBtn.textContent = 'ยืนยัน'
+                cancelBtn.textContent = 'ยกเลิก'
+                confirmBtn.style.display = 'inline-block'
+                cancelBtn.style.display = 'inline-block'
+                
+                modal.style.display = 'flex'
+            })
+        }
+
+        function showAlertModal(message, title = 'Alert') {
+            return new Promise((resolve) => {
+                modalResolver = resolve
+                const modal = document.getElementById('customModal')
+                const modalTitle = document.getElementById('modalTitle')
+                const modalMessage = document.getElementById('modalMessage')
+                const confirmBtn = document.getElementById('modalConfirmBtn')
+                const cancelBtn = document.getElementById('modalCancelBtn')
+                
+                modalTitle.textContent = title
+                modalMessage.textContent = message
+                confirmBtn.textContent = 'ตกลง'
+                cancelBtn.style.display = 'none'
+                confirmBtn.style.display = 'inline-block'
+                
+                modal.style.display = 'flex'
+            })
+        }
+
+        function closeCustomModal(result) {
+            const modal = document.getElementById('customModal')
+            modal.style.display = 'none'
+            
+            if (modalResolver) {
+                modalResolver(result)
+                modalResolver = null
+            }
+        }
+
         // Init
         if (currentUser && authToken) {
             refreshDashboard()
         }
 
     </script>
+
+    <!-- Custom Modal -->
+    <div id="customModal" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 9999; align-items: center; justify-content: center;">
+        <div style="position: absolute; inset: 0; background: rgba(15, 17, 23, 0.5); backdrop-filter: blur(4px);"></div>
+        <div style="position: relative; background: var(--paper); border-radius: var(--radius); box-shadow: var(--shadow-lg); max-width: 420px; width: 90%; max-height: 80vh; overflow: auto; border: 1px solid var(--border);">
+            <div style="padding: 24px; border-bottom: 1px solid var(--border);">
+                <h2 id="modalTitle" style="font-size: 18px; font-weight: 600; color: var(--ink); margin: 0;">Confirmation</h2>
+            </div>
+            <div style="padding: 24px;">
+                <p id="modalMessage" style="font-size: 14px; color: var(--ink); line-height: 1.5; margin: 0;">Are you sure?</p>
+            </div>
+            <div style="padding: 16px 24px; border-top: 1px solid var(--border); display: flex; gap: 12px; justify-content: flex-end;">
+                <button id="modalCancelBtn" onclick="closeCustomModal(false)" style="padding: 10px 24px; border: 1px solid var(--border); background: var(--paper); color: var(--ink); border-radius: var(--radius); cursor: pointer; font-size: 14px; font-weight: 500; transition: all 0.15s; outline: none;" onmouseover="this.style.background='var(--surface)'" onmouseout="this.style.background='var(--paper)'">ยกเลิก</button>
+                <button id="modalConfirmBtn" onclick="closeCustomModal(true)" style="padding: 10px 24px; background: var(--accent); color: #fff; border: none; border-radius: var(--radius); cursor: pointer; font-size: 14px; font-weight: 600; transition: all 0.15s; outline: none;" onmouseover="this.style.opacity='0.9'" onmouseout="this.style.opacity='1'">ยืนยัน</button>
+            </div>
+        </div>
+    </div>
+
 </body>
 
 </html>
