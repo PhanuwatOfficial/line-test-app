@@ -1,4 +1,5 @@
-﻿<!DOCTYPE html>
+
+<!DOCTYPE html>
 <html lang="en">
 
 <head>
@@ -14496,7 +14497,8 @@ th = ลำดับ,รายละเอียด,สเปค,จำนวน
                 }
 
                 // const firebaseUrl = 'https://line-6191d-default-rtdb.asia-southeast1.firebasedatabase.app/logs.json'
-                const firebaseUrl = 'https://cmth-bef8d-default-rtdb.asia-southeast1.firebasedatabase.app/logs.json'
+                // const firebaseUrl = 'https://cmth-bef8d-default-rtdb.asia-southeast1.firebasedatabase.app/logs.json'
+                const firebaseUrl = 'https://purchase-846f5-default-rtdb.asia-southeast1.firebasedatabase.app/logs.json'
                 // const firebaseUrl = 'https://keyproject-84461-default-rtdb.asia-southeast1.firebasedatabase.app/logs.json'
                 // const firebaseUrl = 'https://leave-10269-default-rtdb.asia-southeast1.firebasedatabase.app/logs.json'
 
@@ -14535,7 +14537,8 @@ th = ลำดับ,รายละเอียด,สเปค,จำนวน
                 // Fetch logs from Firebase
                 // const firebaseUrl = 'https://line-6191d-default-rtdb.asia-southeast1.firebasedatabase.app/logs.json'
 
-                const firebaseUrl = 'https://cmth-bef8d-default-rtdb.asia-southeast1.firebasedatabase.app/logs.json'
+                // const firebaseUrl = 'https://cmth-bef8d-default-rtdb.asia-southeast1.firebasedatabase.app/logs.json'
+                const firebaseUrl = 'https://purchase-846f5-default-rtdb.asia-southeast1.firebasedatabase.app/logs.json'    
                 // const firebaseUrl = 'https://keyproject-84461-default-rtdb.asia-southeast1.firebasedatabase.app/logs.json'
 
                 // const firebaseUrl = 'https://leave-10269-default-rtdb.asia-southeast1.firebasedatabase.app/logs.json'
@@ -15032,7 +15035,7 @@ th = ลำดับ,รายละเอียด,สเปค,จำนวน
                         })
                         contentHTML += '</tbody></table></div>'
                     }
-                } else if (memo.isRDProject || memo.type === 'R&D Project') {
+                } else if (memo.isRawMaterialRequest || memo.type === 'Raw Material Request') {
                     // R&D Project content field translation map
                     const contentFieldTranslationMap = {
                         'Project Number': 'rdFieldProjectNumber',
@@ -20254,6 +20257,7 @@ function printMemoDetail() {
             cloudName: "domvtfj1i",
             uploadPreset: "testclaimdata",
             uploadUrl: "https://api.cloudinary.com/v1_1/domvtfj1i/upload",
+            rawUploadUrl: "https://api.cloudinary.com/v1_1/domvtfj1i/raw/upload",
             folder: "MEMO"
         };
 
@@ -20333,7 +20337,7 @@ function printMemoDetail() {
                             reject(new Error(`Upload error for ${file.name}`));
                         });
 
-                        xhr.open('POST', CLOUDINARY_CONFIG.uploadUrl);
+                        xhr.open('POST', CLOUDINARY_CONFIG.rawUploadUrl);
                         xhr.send(formData);
                     });
                 }
@@ -20762,7 +20766,7 @@ function printMemoDetail() {
                     formData.append('file', file);
                     formData.append('upload_preset', CLOUDINARY_CONFIG.uploadPreset);
                     formData.append('folder', CLOUDINARY_CONFIG.folder + '/files');
-                    formData.append('resource_type', 'auto');
+                    formData.append('resource_type', 'raw');
 
                     await new Promise((resolve, reject) => {
                         const xhr = new XMLHttpRequest();
@@ -20799,7 +20803,7 @@ function printMemoDetail() {
                             reject(new Error(`Upload error for ${file.name}`));
                         });
 
-                        xhr.open('POST', CLOUDINARY_CONFIG.uploadUrl);
+                        xhr.open('POST', CLOUDINARY_CONFIG.rawUploadUrl);
                         xhr.send(formData);
                     });
                 }
@@ -20910,7 +20914,7 @@ function printMemoDetail() {
                     formData.append('file', file);
                     formData.append('upload_preset', CLOUDINARY_CONFIG.uploadPreset);
                     formData.append('folder', CLOUDINARY_CONFIG.folder + '/files');
-                    formData.append('resource_type', 'auto');
+                    formData.append('resource_type', 'raw');
 
                     await new Promise((resolve, reject) => {
                         const xhr = new XMLHttpRequest();
@@ -20947,7 +20951,7 @@ function printMemoDetail() {
                             reject(new Error(`Upload error for ${file.name}`));
                         });
 
-                        xhr.open('POST', CLOUDINARY_CONFIG.uploadUrl);
+                        xhr.open('POST', CLOUDINARY_CONFIG.rawUploadUrl);
                         xhr.send(formData);
                     });
                 }
@@ -21058,7 +21062,7 @@ function printMemoDetail() {
                     formData.append('file', file);
                     formData.append('upload_preset', CLOUDINARY_CONFIG.uploadPreset);
                     formData.append('folder', CLOUDINARY_CONFIG.folder + '/files');
-                    formData.append('resource_type', 'auto');
+                    formData.append('resource_type', 'raw');
 
                     await new Promise((resolve, reject) => {
                         const xhr = new XMLHttpRequest();
@@ -21302,6 +21306,10 @@ function printMemoDetail() {
                     const formData = new FormData()
                     formData.append('file', file)
                     formData.append('upload_preset', CLOUDINARY_CONFIG.uploadPreset)
+                    formData.append('folder', CLOUDINARY_CONFIG.folder + '/files')
+                    formData.append('resource_type', 'raw')
+                    formData.append('folder', CLOUDINARY_CONFIG.folder + '/files')
+                    formData.append('resource_type', 'raw')
 
                     const xhr = new XMLHttpRequest()
                     xhr.addEventListener('progress', (e) => {
@@ -21325,7 +21333,7 @@ function printMemoDetail() {
                         finalizeProgress()
                     })
 
-                    xhr.open('POST', CLOUDINARY_CONFIG.uploadUrl)
+                    xhr.open('POST', CLOUDINARY_CONFIG.rawUploadUrl)
                     xhr.send(formData)
                 } catch (e) {
                     console.error('Error uploading image:', e)
@@ -21390,7 +21398,7 @@ function printMemoDetail() {
                         finalizeProgress()
                     })
 
-                    xhr.open('POST', CLOUDINARY_CONFIG.uploadUrl)
+                    xhr.open('POST', CLOUDINARY_CONFIG.rawUploadUrl)
                     xhr.send(formData)
                 } catch (e) {
                     console.error('Error uploading file:', e)
