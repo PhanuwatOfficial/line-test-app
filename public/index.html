@@ -16928,8 +16928,13 @@ function printMemoDetail() {
         const isRawMat = (memo.isRawMaterialRequest || memo.type === 'Raw Material Request') && typeof memo.content === 'object' && memo.content !== null
         const isRDProject = typeof memo.content === 'object' && memo.content !== null && !isRawMat && !isSampleProd
 
-        const imageHTML = (memo.imageUrl && !isRDProject && !isRawMat && !isSampleProd)
-            ? `<div class="section-block"><div class="section-label">เอกสารแนบ</div><img src="${escHtml(memo.imageUrl)}" class="memo-image" onerror="this.parentElement.style.display='none'" /></div>`
+        // Support both the legacy single imageUrl field and the newer imageUrls array
+        // (used by regular memos, R&D Project memos, and Raw Material Request memos alike)
+        const imagesToPrint = (memo.imageUrls && memo.imageUrls.length > 0)
+            ? memo.imageUrls
+            : (memo.imageUrl ? [memo.imageUrl] : [])
+        const imageHTML = imagesToPrint.length > 0
+            ? `<div class="section-block" id="attachmentsBlock"><div class="section-label">เอกสารแนบ</div><div id="attachmentsGrid" style="display:flex;flex-wrap:wrap;gap:8px;">${imagesToPrint.map(url => `<img src="${escHtml(url)}" class="memo-image" style="max-width:200px;width:auto;" onerror="this.style.display='none'" />`).join('')}</div></div>`
             : ''
 
         // --- Signature footer block ---
@@ -17638,6 +17643,13 @@ function printMemoDetail() {
                     padding-top: 0px;
                 }
 
+                /* Applied via script when content overflows one page: pushes attachments to page 2 */
+                .force-next-page {
+                    page-break-before: always;
+                    break-before: page;
+                    margin-top: 0 !important;
+                }
+
                 /* 3-column signature footer for R&D Projects */
                 .sig-footer-3col {
                     display: flex;
@@ -17800,7 +17812,7 @@ function printMemoDetail() {
                  
                 </div>
 
-                ${signatureFooterHTML}
+                <div id="sigFooterBlock">${signatureFooterHTML}</div>
 
   
             </div>
@@ -17808,7 +17820,86 @@ function printMemoDetail() {
         </html>
     `)
         printWindow.document.close()
-        setTimeout(() => printWindow.print(), 400)
+
+        // Decide where the attachments (images) should go:
+        // - if everything fits on one printed page, keep them before the signature (default position)
+        // - if the content overflows to more than one page, move them to a new page right after the signature
+        ;(function preparePrintPagination() {
+            const doc = printWindow.document
+            const attachmentsBlock = doc.getElementById('attachmentsBlock')
+            const sigFooterBlock = doc.getElementById('sigFooterBlock')
+            const pageEl = doc.querySelector('.page')
+
+            if (!attachmentsBlock || !pageEl) {
+                setTimeout(() => printWindow.print(), 400)
+                return
+            }
+
+            // Wait for every image in the print window to finish loading (or fail) before measuring layout
+            const imgs = Array.from(doc.querySelectorAll('img'))
+            const imgPromises = imgs.map(img => {
+                if (img.complete) return Promise.resolve()
+                return new Promise(resolve => {
+                    img.addEventListener('load', resolve, { once: true })
+                    img.addEventListener('error', resolve, { once: true })
+                })
+            })
+
+            Promise.all(imgPromises).then(() => {
+                // Let layout settle for a tick before measuring
+                setTimeout(() => {
+                    // Measure one A4 page's height in px as rendered by this window
+                    const ruler = doc.createElement('div')
+                    ruler.style.cssText = 'height:297mm;width:0;position:absolute;visibility:hidden;'
+                    doc.body.appendChild(ruler)
+                    const pagePx = ruler.offsetHeight
+                    doc.body.removeChild(ruler)
+
+                    const fullHeight = pageEl.scrollHeight
+
+                    if (fullHeight > pagePx && sigFooterBlock) {
+                        // Overflows one page: push attachments to page 2, right after the signature
+                        attachmentsBlock.classList.add('force-next-page')
+                        sigFooterBlock.parentNode.insertBefore(attachmentsBlock, sigFooterBlock.nextSibling)
+
+                        // Resize the images to display large and all fit within that one dedicated page
+                        const gridDiv = attachmentsBlock.querySelector('#attachmentsGrid')
+                        const gridImgs = gridDiv ? Array.from(gridDiv.querySelectorAll('img')) : []
+                        const n = gridImgs.length
+
+                        if (n > 0) {
+                            const columns = n === 1 ? 1 : (n <= 4 ? 2 : 3)
+                            const rows = Math.ceil(n / columns)
+                            const gap = 12
+                            const labelEl = attachmentsBlock.querySelector('.section-label')
+                            const labelSpace = (labelEl ? labelEl.offsetHeight : 0) + 24
+                            const availableHeight = pagePx - labelSpace - 20
+                            const cellHeight = Math.max(80, (availableHeight - gap * (rows - 1)) / rows)
+
+                            gridDiv.style.display = 'grid'
+                            gridDiv.style.gridTemplateColumns = `repeat(${columns}, 1fr)`
+                            gridDiv.style.gridAutoRows = `${cellHeight}px`
+                            gridDiv.style.gap = `${gap}px`
+                            gridDiv.style.width = '100%'
+                            gridDiv.style.justifyItems = 'center'
+                            gridDiv.style.alignItems = 'center'
+
+                            gridImgs.forEach(img => {
+                                img.style.maxWidth = '100%'
+                                img.style.maxHeight = `${cellHeight}px`
+                                img.style.width = 'auto'
+                                img.style.height = 'auto'
+                                img.style.margin = '0 auto'
+                                img.style.display = 'block'
+                                img.style.objectFit = 'contain'
+                            })
+                        }
+                    }
+
+                    printWindow.print()
+                }, 150)
+            })
+        })()
         }
     }
 }
