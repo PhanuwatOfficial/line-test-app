@@ -11090,91 +11090,47 @@ th = ลำดับ,รายละเอียด,สเปค,จำนวน
 
             setStatus('statusSingleSend', 'loading', 'hourglass_empty', `Dispatching to ${recipients.length} ${recipients.length === 1 ? 'recipient' : 'recipients'}...`)
             try {
-                // Separate LINE and notification recipients
-                const lineRecipients = recipients.filter(r => r.recipientType === 'line_follower')
-                const notificationRecipients = recipients.filter(r => r.recipientType === 'system_user')
-
                 let totalSuccessCount = 0
                 let totalFailCount = 0
                 let successfulRecipientNames = []
                 let sentMemoId = null
 
-                // Send LINE messages - now send all at once with recipients array
-                if (lineRecipients.length > 0) {
-                    try {
-                        const sendData = {
-                            recipients: lineRecipients.map(r => ({
-                                userId: r.id,
-                                recipientUserId: r.userId
-                            })),
-                            title: title,
-                            type: type,
-                            content: text,
-                            docNumber: currentDocNumber,
-                            senderUserId: currentUser?.userId,
-                            imageUrls: memoImageUrls && memoImageUrls.length > 0 ? memoImageUrls : null,
-                            fileUrls: memoFileUrls && memoFileUrls.length > 0 ? memoFileUrls : null
-                        }
-                        const res = await fetch('/send', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify(sendData)
-                        })
-                        if (res.ok) {
-                            const responseData = await res.json()
-                            sentMemoId = responseData.memoId
-                            totalSuccessCount += lineRecipients.length
-                            lineRecipients.forEach(recipient => {
-                                const recipientName = recipientNameMap[recipient.id] || 'Unknown'
-                                successfulRecipientNames.push(recipientName)
-                            })
-                        } else {
-                            totalFailCount += lineRecipients.length
-                        }
-                    } catch (e) {
-                        totalFailCount += lineRecipients.length
+                // Send all selected recipients in one request so mixed linked + system users
+                // share the same memo record and document number.
+                try {
+                    const sendData = {
+                        recipients: recipients.map(r => ({
+                            userId: r.id,
+                            recipientUserId: r.userId
+                        })),
+                        title: title,
+                        type: type,
+                        content: text,
+                        docNumber: currentDocNumber,
+                        senderUserId: currentUser?.userId,
+                        imageUrls: memoImageUrls && memoImageUrls.length > 0 ? memoImageUrls : null,
+                        fileUrls: memoFileUrls && memoFileUrls.length > 0 ? memoFileUrls : null
                     }
-                }
 
-                // Send notifications to system users - now send all at once
-                if (notificationRecipients.length > 0) {
-                    try {
-                        const memoData = {
-                            recipients: notificationRecipients.map(r => ({
-                                userId: r.id,
-                                recipientUserId: r.userId
-                            })),
-                            title: title,
-                            type: type,
-                            content: text,
-                            docNumber: currentDocNumber,
-                            imageUrls: memoImageUrls && memoImageUrls.length > 0 ? memoImageUrls : null,
-                            fileUrls: memoFileUrls && memoFileUrls.length > 0 ? memoFileUrls : null
-                        }
+                    const res = await fetch('/send', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(sendData)
+                    })
 
-                        const memoRes = await fetch(`/send-system-memo`, {
-                            method: 'POST',
-                            headers: {
-                                'Authorization': `Bearer ${authToken}`,
-                                'Content-Type': 'application/json'
-                            },
-                            body: JSON.stringify(memoData)
+                    if (res.ok) {
+                        const responseData = await res.json()
+                        sentMemoId = responseData.memoId
+                        totalSuccessCount = recipients.length
+                        recipients.forEach(recipient => {
+                            const recipientName = recipientNameMap[recipient.id] || 'Unknown'
+                            successfulRecipientNames.push(recipientName)
                         })
-
-                        if (memoRes.ok) {
-                            const memoResponse = await memoRes.json()
-                            sentMemoId = memoResponse.memoId
-                            totalSuccessCount += notificationRecipients.length
-                            notificationRecipients.forEach(recipient => {
-                                const recipientName = recipientNameMap[recipient.id] || 'Unknown'
-                                successfulRecipientNames.push(recipientName)
-                            })
-                        } else {
-                            totalFailCount += notificationRecipients.length
-                        }
-                    } catch (e) {
-                        totalFailCount += notificationRecipients.length
+                    } else {
+                        totalFailCount = recipients.length
                     }
+                } catch (e) {
+                    totalFailCount = recipients.length
                 }
 
                 if (totalFailCount === 0) {
@@ -14497,6 +14453,7 @@ th = ลำดับ,รายละเอียด,สเปค,จำนวน
 
                 // const firebaseUrl = 'https://line-6191d-default-rtdb.asia-southeast1.firebasedatabase.app/logs.json'
                 const firebaseUrl = 'https://cmth-bef8d-default-rtdb.asia-southeast1.firebasedatabase.app/logs.json'
+                // const firebaseUrl = 'https://rmcproduction-1cfef-default-rtdb.asia-southeast1.firebasedatabase.app/logs.json'
                 // const firebaseUrl = 'https://keyproject-84461-default-rtdb.asia-southeast1.firebasedatabase.app/logs.json'
                 // const firebaseUrl = 'https://leave-10269-default-rtdb.asia-southeast1.firebasedatabase.app/logs.json'
 
@@ -14537,6 +14494,7 @@ th = ลำดับ,รายละเอียด,สเปค,จำนวน
 
                 const firebaseUrl = 'https://cmth-bef8d-default-rtdb.asia-southeast1.firebasedatabase.app/logs.json'
                 // const firebaseUrl = 'https://keyproject-84461-default-rtdb.asia-southeast1.firebasedatabase.app/logs.json'
+                // const firebaseUrl = 'https://rmcproduction-1cfef-default-rtdb.asia-southeast1.firebasedatabase.app/logs.json'
 
                 // const firebaseUrl = 'https://leave-10269-default-rtdb.asia-southeast1.firebasedatabase.app/logs.json'
 
