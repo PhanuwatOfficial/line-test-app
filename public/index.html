@@ -2861,26 +2861,7 @@
                 </a>
             </div>
         </nav>
-<!--
-เพิ่ม tab memo แบบใหม่ (ขอสินค้าตัวอย่าง)
-มี input 
--วัตถุประสงค์
-1.checkbox (default) = เบิกไปให้ลูกค้า
-2.checkbox อื่นๆ ให้กรอกเองเป็น text input
--ลูกค้าที่ร้องขอ (text input)
--วันที่ต้องการ (date input)
--ประเภทสินค้า select (ไม้,เยื่อ,PP Board,อลูมิเนียม : เส้น/คอยล์/แผ่น,เหล็กฟอร์มมิ่ง,อุปกรณ์,อื่นๆ (ถ้าเลือกอื่นๆให้มี text input))
 
-ทำเป็นฟอร์ม table
-th = ลำดับ,รายละเอียด,สเปค,จำนวน,หน่วย (ลำดับ index อาจจะให้รัน auto เมื่อคลิกที่ช่องนั้น)
-มี td 7 บรรทัด
-
--หมายเหตุ
--เพิ่มอัปโหลดรูป/ไฟล์ เหมือนกับ memo อื่นๆ
--ให้สามารถกำหนดผู้อนุมัติเฉพาะ memo ขอสินค้าตัวอย่าง (view-rdproject-roles) ถ้าผู้อนุมัติที่กำหนดไว้/user role = admin เป็นคนกรอกแบบฟอร์มแล้วส่งเอง
-ให้ไม่ต้องทำการอนุมัติ (ส่ง memo ไปยังผู้รับได้เลย)
-
--->
         <div class="sidebar-create" id="createSection" style="display:none;">
             <button class="btn-create" onclick="closeMobileSidebar(); showView('compose')">
                 <span class="material-symbols-outlined">add</span>
@@ -5003,13 +4984,13 @@ th = ลำดับ,รายละเอียด,สเปค,จำนวน
                             <div style="display: flex; gap: 12px; align-items: end;">
                                 <div class="field" style="width: 20%;">
                                     <label data-translate="filterByDepartment">Filter by Department</label>
-                                    <select id="userFilterDepartment" onchange="updateUserFilters()" style="width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); color: var(--ink);">
+                                    <select id="userFilterDepartment" onchange="updateDepartmentFilter()" style="width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); color: var(--ink);">
                                         <option value="" data-translate="allDepartments">— All Departments —</option>
                                     </select>
                                 </div>
                                 <div class="field" style="width: 20%;">
                                     <label data-translate="filterBySubDepartment">Filter by Sub-Department</label>
-                                    <select id="userFilterDepartment2" onchange="updateUserFilters()" style="width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); color: var(--ink);">
+                                    <select id="userFilterDepartment2" onchange="renderSystemUsers()" style="width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); color: var(--ink);">
                                         <option value="" data-translate="allDepartments">— All Sub-Departments —</option>
                                     </select>
                                 </div>
@@ -10466,7 +10447,7 @@ th = ลำดับ,รายละเอียด,สเปค,จำนวน
             applyTranslations()
         }
 
-        function updateUserFilters() {
+        function updateDepartmentFilter() {
             updateSubDepartmentOptions()
             renderSystemUsers()
         }
@@ -10477,6 +10458,7 @@ th = ลำดับ,รายละเอียด,สเปค,จำนวน
             if (!dept2Select) return
 
             const selectedDept = deptSelect?.value || ''
+            const previousDept2 = dept2Select.value || ''
             const subDepartments = new Set()
 
             for (let user of allSystemUsers) {
@@ -10490,6 +10472,10 @@ th = ลำดับ,รายละเอียด,สเปค,จำนวน
                 const label = translations[currentLanguage]['dept_' + d] || d
                 return `<option value="${escHtml(d)}">${escHtml(label)}</option>`
             }).join('')
+
+            if (previousDept2 && dept2Array.includes(previousDept2)) {
+                dept2Select.value = previousDept2
+            }
             applyTranslations()
         }
 
