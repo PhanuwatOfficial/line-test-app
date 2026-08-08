@@ -4999,6 +4999,29 @@ th = ลำดับ,รายละเอียด,สเปค,จำนวน
                             </button>
                         </div>
 
+                        <div class="section-body" style="padding: 10px 24px 0 24px;">
+                            <div style="display: flex; gap: 12px; align-items: end;">
+                                <div class="field" style="width: 20%;">
+                                    <label data-translate="filterByDepartment">Filter by Department</label>
+                                    <select id="userFilterDepartment" onchange="updateUserFilters()" style="width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); color: var(--ink);">
+                                        <option value="" data-translate="allDepartments">— All Departments —</option>
+                                    </select>
+                                </div>
+                                <div class="field" style="width: 20%;">
+                                    <label data-translate="filterBySubDepartment">Filter by Sub-Department</label>
+                                    <select id="userFilterDepartment2" onchange="updateUserFilters()" style="width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); color: var(--ink);">
+                                        <option value="" data-translate="allDepartments">— All Sub-Departments —</option>
+                                    </select>
+                                </div>
+                                <div class="field">
+                                    <button class="btn btn-ghost btn-sm" onclick="clearUserFilters()" style="white-space: nowrap; align-self: flex-end;">
+                                        <span class="material-symbols-outlined">clear</span>
+                                        <span data-translate="clear">Clear</span>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
                         <div class="table-wrap">
                             <table>
                                 <thead>
@@ -6867,6 +6890,7 @@ th = ลำดับ,รายละเอียด,สเปค,จำนวน
                 subDepartmentTh: "แผนก",
                 selectSubDepartment: "เลือกแผนก...",
                 selectDivision: "เลือกแผนก",
+                filterBySubDepartment: "กรองตามแผนก",
                 createAccountBtn: "สร้างบัญชี",
                 creatingAccount: "กำลังสร้างบัญชี...",
                 registrationFailed: "การลงทะเบียนล้มเหลว",
@@ -7439,6 +7463,7 @@ th = ลำดับ,รายละเอียด,สเปค,จำนวน
                 subDepartmentTh: "Sub-Department",
                 selectSubDepartment: "Select sub-department...",
                 selectDivision: "Select Division",
+                filterBySubDepartment: "Filter by Sub-Department",
                 createAccountBtn: "Create Account",
                 creatingAccount: "Creating account...",
                 registrationFailed: "Registration failed.",
@@ -7748,13 +7773,14 @@ th = ลำดับ,รายละเอียด,สเปค,จำนวน
                 success: "✓ Success",
                 error: "Error",
                 "dept_บริหาร": "Administration",
-                "dept_จัดซื้อในประเทศ": "Domestic Procurement",
-                "dept_จัดซื้อต่างประเทศ": "International Procurement",
+                "dept_จัดซื้อในประเทศ": "Domestic Puchasing",
+                "dept_จัดซื้อต่างประเทศ": "International Puchasing",
                 "dept_บัญชีและการเงิน": "Accounting and Finance",
                 "dept_ทรัพยากรมนุษย์": "Human Resources",
                 "dept_ขายและการตลาด": "Sales and Marketing",
                 "dept_โลจิสติกส์": "Logistics",
-                "dept_ผลิต": "Manufacturing",
+                "dept_ผลิต": "Production",
+                "dept_ผลิต-FURNIX": "Production-FURNIX",
                 "dept_วิศวกรรม": "Engineering",
                 "dept_งานโครงการ": "Project Management",
                 "dept_วิจัยและพัฒนา": "Research and Development",
@@ -10386,6 +10412,7 @@ th = ลำดับ,รายละเอียด,สเปค,จำนวน
 
         // ── Admin: Load All Users ─────────────────────
         let userPasswordStates = {} // Store password visibility state and password data for each user
+        let allSystemUsers = []
 
         async function loadAllUsers() {
             try {
@@ -10394,27 +10421,118 @@ th = ลำดับ,รายละเอียด,สเปค,จำนวน
                 })
                 const data = await res.json()
 
+                allSystemUsers = data.users || []
+                buildUserFilterOptions()
+
                 const tbody = document.getElementById('allUsersTbody')
-                if (!res.ok || !data.users || data.users.length === 0) {
+                if (!res.ok || allSystemUsers.filter(u => u.username !== 'RMCadmin').length === 0) {
                     tbody.innerHTML = `<tr><td colspan="8"><div class="empty-state"><span class="material-symbols-outlined">person_off</span><p>No users found</p></div></td></tr>`
                     return
                 }
 
-                let rows = ''
-                for (let user of (data.users || []).filter(u => u.username !== 'RMCadmin')) {
-                    const joinDate = user.createdAt ? new Date(user.createdAt).toLocaleDateString() : 'N/A'
-                    const role = user.role || 'user'
-                    const roleStyle = role === 'admin' ? 'color: var(--accent); font-weight: 700;' : ''
-                    const userId = user.userId || ''
-                    const department = user.department || '—'
-                    const department2 = user.department2 || '—'
+                renderSystemUsers()
+            } catch (err) {
+                const tbody = document.getElementById('allUsersTbody')
+                tbody.innerHTML = `<tr><td colspan="8"><div class="empty-state"><span class="material-symbols-outlined">error</span><p>Error loading users: ${err.message}</p></div></td></tr>`
+            }
+        }
 
-                    // Initialize password visibility state and store actual password
-                    if (!userPasswordStates[userId]) {
-                        userPasswordStates[userId] = { visible: false, password: user.password || '' }
-                    }
+        function buildUserFilterOptions() {
+            const deptSelect = document.getElementById('userFilterDepartment')
+            const dept2Select = document.getElementById('userFilterDepartment2')
+            if (!deptSelect || !dept2Select) return
 
-                    rows += `<tr>
+            const departments = new Set()
+            const subDepartments = new Set()
+
+            for (let user of allSystemUsers) {
+                if (user.department) departments.add(user.department)
+                if (user.department2) subDepartments.add(user.department2)
+            }
+
+            const deptArray = Array.from(departments).sort()
+            const dept2Array = Array.from(subDepartments).sort()
+
+            deptSelect.innerHTML = `<option value="" data-translate="allDepartments">— All Departments —</option>` + deptArray.map(d => {
+                const label = translations[currentLanguage]['dept_' + d] || d
+                return `<option value="${escHtml(d)}">${escHtml(label)}</option>`
+            }).join('')
+
+            dept2Select.innerHTML = `<option value="" data-translate="allDepartments">— All Sub-Departments —</option>` + dept2Array.map(d => {
+                const label = translations[currentLanguage]['dept_' + d] || d
+                return `<option value="${escHtml(d)}">${escHtml(label)}</option>`
+            }).join('')
+
+            applyTranslations()
+        }
+
+        function updateUserFilters() {
+            updateSubDepartmentOptions()
+            renderSystemUsers()
+        }
+
+        function updateSubDepartmentOptions() {
+            const deptSelect = document.getElementById('userFilterDepartment')
+            const dept2Select = document.getElementById('userFilterDepartment2')
+            if (!dept2Select) return
+
+            const selectedDept = deptSelect?.value || ''
+            const subDepartments = new Set()
+
+            for (let user of allSystemUsers) {
+                if (!user.department2) continue
+                if (selectedDept && user.department !== selectedDept) continue
+                subDepartments.add(user.department2)
+            }
+
+            const dept2Array = Array.from(subDepartments).sort()
+            dept2Select.innerHTML = `<option value="" data-translate="allDepartments">— All Sub-Departments —</option>` + dept2Array.map(d => {
+                const label = translations[currentLanguage]['dept_' + d] || d
+                return `<option value="${escHtml(d)}">${escHtml(label)}</option>`
+            }).join('')
+            applyTranslations()
+        }
+
+        function clearUserFilters() {
+            const deptSelect = document.getElementById('userFilterDepartment')
+            const dept2Select = document.getElementById('userFilterDepartment2')
+            if (deptSelect) deptSelect.value = ''
+            if (dept2Select) dept2Select.value = ''
+            renderSystemUsers()
+        }
+
+        function renderSystemUsers() {
+            const tbody = document.getElementById('allUsersTbody')
+            const selectedDept = document.getElementById('userFilterDepartment')?.value || ''
+            const selectedDept2 = document.getElementById('userFilterDepartment2')?.value || ''
+
+            const visibleUsers = allSystemUsers
+                .filter(u => u.username !== 'RMCadmin')
+                .filter(user => {
+                    if (selectedDept && (user.department || '') !== selectedDept) return false
+                    if (selectedDept2 && (user.department2 || '') !== selectedDept2) return false
+                    return true
+                })
+
+            if (visibleUsers.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="8"><div class="empty-state"><span class="material-symbols-outlined">person_off</span><p>No users found</p></div></td></tr>`
+                return
+            }
+
+            let rows = ''
+            for (let user of visibleUsers) {
+                const joinDate = user.createdAt ? new Date(user.createdAt).toLocaleDateString() : 'N/A'
+                const role = user.role || 'user'
+                const roleStyle = role === 'admin' ? 'color: var(--accent); font-weight: 700;' : ''
+                const userId = user.userId || ''
+                const department = user.department || '—'
+                const department2 = user.department2 || '—'
+
+                if (!userPasswordStates[userId]) {
+                    userPasswordStates[userId] = { visible: false, password: user.password || '' }
+                }
+
+                rows += `<tr>
           <td><strong>${escHtml(user.username)}</strong></td>
           <td>${escHtml(user.name)} ${escHtml(user.surname || '')}</td>
           <td><span style="${roleStyle}" data-translate="role_${role}">${escHtml(role.toUpperCase())}</span></td>
@@ -10440,13 +10558,9 @@ th = ลำดับ,รายละเอียด,สเปค,จำนวน
             </div>
           </td>
         </tr>`
-                }
-                tbody.innerHTML = rows
-                applyTranslations()
-            } catch (err) {
-                const tbody = document.getElementById('allUsersTbody')
-                tbody.innerHTML = `<tr><td colspan="8"><div class="empty-state"><span class="material-symbols-outlined">error</span><p>Error loading users: ${err.message}</p></div></td></tr>`
             }
+            tbody.innerHTML = rows
+            applyTranslations()
         }
 
         function toggleUserPassword(userId) {

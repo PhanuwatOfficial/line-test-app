@@ -19,29 +19,29 @@ let logs = [] // เก็บ logs ชั่วคราว
 const MAX_LOGS = 1000 // เก็บ max 1000 logs
 
 function addLog(level, messageKey, data = null) {
-  const timestamp = new Date().toISOString()
-  const logEntry = {
-    timestamp,
-    level,
-    message: messageKey,  // Store the translation key, frontend will translate
-    data
-  }
+  // const timestamp = new Date().toISOString()
+  // const logEntry = {
+  //   timestamp,
+  //   level,
+  //   message: messageKey,  // Store the translation key, frontend will translate
+  //   data
+  // }
 
-  // บันทึก log ในหน่วยความจำ
-  logs.push(logEntry)
+  // // บันทึก log ในหน่วยความจำ
+  // logs.push(logEntry)
 
-  // เก็บ max 1000 logs
-  if (logs.length > MAX_LOGS) {
-    logs.shift()
-  }
+  // // เก็บ max 1000 logs
+  // if (logs.length > MAX_LOGS) {
+  //   logs.shift()
+  // }
 
-  // บันทึก log ลงใน Firebase
-  firebase_set(`logs/${Date.now()}_${Math.random().toString(36).substr(2, 9)}`, logEntry).catch(err => {
-    console.error('❌ [LOGS] Firebase write failed:', err.message)
-    console.error('   Timestamp:', timestamp)
-    console.error('   Level:', level)
-    console.error('   Message Key:', messageKey)
-  })
+  // // บันทึก log ลงใน Firebase
+  // firebase_set(`logs/${Date.now()}_${Math.random().toString(36).substr(2, 9)}`, logEntry).catch(err => {
+  //   console.error('❌ [LOGS] Firebase write failed:', err.message)
+  //   console.error('   Timestamp:', timestamp)
+  //   console.error('   Level:', level)
+  //   console.error('   Message Key:', messageKey)
+  // })
 }
 
 function getContentPreviewText(content, maxLength = 200) {
