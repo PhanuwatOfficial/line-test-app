@@ -15003,7 +15003,13 @@
                             const dateMatch = rawValue.match(/^(\d{4})-(\d{2})-(\d{2})$/)
                             if (dateMatch) {
                                 const [, year, month, day] = dateMatch
-                                return `${Number(day)} ${thaiMonthNames[Number(month) - 1]} ${Number(year) + 543}`
+                                const displayYear = Number(year) >= 2400 ? Number(year) - 543 : Number(year)
+                                return `${Number(day)} ${thaiMonthNames[Number(month) - 1]} ${displayYear}`
+                            }
+
+                            const thaiDateMatch = rawValue.match(/^(\d{1,2})\s+(.+?)\s+(\d{4})$/)
+                            if (thaiDateMatch && Number(thaiDateMatch[3]) >= 2400) {
+                                return `${thaiDateMatch[1]} ${thaiDateMatch[2]} ${Number(thaiDateMatch[3]) - 543}`
                             }
 
                             const parsedDate = new Date(rawValue)
@@ -18530,6 +18536,26 @@ function printMemoDetail() {
             return result
         }
 
+        function formatSampleProductDateForDisplay(value) {
+            if (value === undefined || value === null || value === '') return ''
+
+            const rawValue = String(value).trim()
+            const dateMatch = rawValue.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+            if (dateMatch) {
+                const [, year, month, day] = dateMatch
+                const monthNames = ['มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน', 'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม']
+                const displayYear = Number(year) >= 2400 ? Number(year) - 543 : Number(year)
+                return `${Number(day)} ${monthNames[Number(month) - 1]} ${displayYear}`
+            }
+
+            const thaiDateMatch = rawValue.match(/^(\d{1,2})\s+(.+?)\s+(\d{4})$/)
+            if (thaiDateMatch && Number(thaiDateMatch[3]) >= 2400) {
+                return `${thaiDateMatch[1]} ${thaiDateMatch[2]} ${Number(thaiDateMatch[3]) - 543}`
+            }
+
+            return value
+        }
+
         // Helper function to format Sample Product Request content as HTML grid for print
         function formatSampleProductContentForPrintHTML(content, items = [], language = 'th') {
             if (!content || typeof content !== 'object') return escHtml(String(content || ''))
@@ -18581,9 +18607,12 @@ function printMemoDetail() {
                         const value = content[key]
                         if (value !== undefined && value !== null && value !== '') {
                             const translatedLabel = fieldLabels[key] || key
+                            const displayValue = key === 'Date' || key === 'Required Date'
+                                ? formatSampleProductDateForDisplay(value)
+                                : value
                             result += `<div class="print-content-grid-item">
                                 <div class="print-content-grid-label">${escHtml(translatedLabel)}</div>
-                                <div class="print-content-grid-value">${escHtml(value)}</div>
+                                <div class="print-content-grid-value">${escHtml(displayValue)}</div>
                             </div>`
                         }
                     })
