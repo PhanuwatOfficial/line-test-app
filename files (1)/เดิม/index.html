@@ -6377,6 +6377,7 @@
         // ──────────────────────────────────────────────
         let notifications = []
         let notificationsLoaded = false
+        let notificationRefreshInterval = null
 
         async function loadNotificationsFromFirebase() {
             if (!authToken) return
@@ -6419,90 +6420,52 @@
             }
         }
 
-        // ──────────────────────────────────────────────
-        // Generic poll manager
-        // - Increases the interval well above the old 3s (which was hammering
-        //   Firebase RTDB with full-node downloads every 3 seconds per open tab)
-        // - Pauses entirely while the browser tab is hidden (Page Visibility API)
-        //   and does one immediate refresh + resumes when the tab becomes visible
-        //   again, so data still feels fresh without polling in the background.
-        // ──────────────────────────────────────────────
-        const pollRegistry = {}
-
-        function registerPoll(name, fn, intervalMs) {
-            pollRegistry[name] = { fn, intervalMs, timer: null, active: false }
-        }
-
-        function startPoll(name, { immediate = true } = {}) {
-            const poll = pollRegistry[name]
-            if (!poll) return
-            poll.active = true
-            if (poll.timer) clearInterval(poll.timer)
-            if (immediate && !document.hidden) poll.fn()
-            if (!document.hidden) {
-                poll.timer = setInterval(poll.fn, poll.intervalMs)
-            }
-        }
-
-        function stopPoll(name) {
-            const poll = pollRegistry[name]
-            if (!poll) return
-            poll.active = false
-            if (poll.timer) {
-                clearInterval(poll.timer)
-                poll.timer = null
-            }
-        }
-
-        document.addEventListener('visibilitychange', () => {
-            Object.entries(pollRegistry).forEach(([name, poll]) => {
-                if (!poll.active) return
-                if (document.hidden) {
-                    // Tab backgrounded: stop hitting the server/Firebase entirely
-                    if (poll.timer) {
-                        clearInterval(poll.timer)
-                        poll.timer = null
-                    }
-                } else {
-                    // Tab foregrounded again: refresh once immediately, then resume
-                    poll.fn()
-                    if (!poll.timer) {
-                        poll.timer = setInterval(poll.fn, poll.intervalMs)
-                    }
-                }
-            })
-        })
-
-        registerPoll('notifications', () => {
-            if (authToken && currentUser) loadNotificationsFromFirebase()
-        }, 20000) // was 3000ms — badges don't need sub-second precision
-
+        // Auto-refresh notifications every ... seconds when logged in
         function startNotificationRefresh() {
-            startPoll('notifications', { immediate: false })
+            if (notificationRefreshInterval) clearInterval(notificationRefreshInterval)
+            notificationRefreshInterval = setInterval(() => {
+                if (authToken && currentUser) {
+                    loadNotificationsFromFirebase()
+                }
+            }, 3000) // Refresh every ... seconds
+
         }
 
         function stopNotificationRefresh() {
-            stopPoll('notifications')
+            if (notificationRefreshInterval) {
+                clearInterval(notificationRefreshInterval)
+                notificationRefreshInterval = null
+
+            }
         }
 
         // ──────────────────────────────────────────────
         // Follower Registry Stats Refresh System
         // ──────────────────────────────────────────────
-        registerPoll('followerStats', () => {
-            loadFollowerRegistryStats()
-        }, 15000) // was 3000ms — this fans out to 4 full-collection endpoints per tick
+        let followerStatsRefreshInterval = null
 
         function startFollowerStatsRefresh() {
-            startPoll('followerStats')
+            if (followerStatsRefreshInterval) clearInterval(followerStatsRefreshInterval)
+            // Refresh immediately on start
+            loadFollowerRegistryStats()
+            // Then refresh every 3 seconds for real-time updates
+            followerStatsRefreshInterval = setInterval(() => {
+                loadFollowerRegistryStats()
+            }, 3000)
         }
 
         function stopFollowerStatsRefresh() {
-            stopPoll('followerStats')
+            if (followerStatsRefreshInterval) {
+                clearInterval(followerStatsRefreshInterval)
+                followerStatsRefreshInterval = null
+            }
         }
 
         // ──────────────────────────────────────────────
         // Pending Approvals Badge Refresh System
         // ──────────────────────────────────────────────
+        let pendingApprovalsRefreshInterval = null
+
         async function refreshPendingApprovalsBadge() {
             if (!authToken) return
             try {
@@ -6530,17 +6493,25 @@
             }
         }
 
-        registerPoll('pendingApprovals', () => {
+        function startPendingApprovalsRefresh() {
+            if (pendingApprovalsRefreshInterval) clearInterval(pendingApprovalsRefreshInterval)
+            // Refresh immediately on start
             refreshPendingApprovalsBadge()
             refreshFollowersPendingBadge()
-        }, 30000) // was 3000ms — this endpoint scans every user's sent_memos server-side, by far the heaviest one
+            // Then refresh every 10 seconds for real-time updates
+            pendingApprovalsRefreshInterval = setInterval(() => {
+                refreshPendingApprovalsBadge()
+                refreshFollowersPendingBadge()
+            }, 3000)
 
-        function startPendingApprovalsRefresh() {
-            startPoll('pendingApprovals')
         }
 
         function stopPendingApprovalsRefresh() {
-            stopPoll('pendingApprovals')
+            if (pendingApprovalsRefreshInterval) {
+                clearInterval(pendingApprovalsRefreshInterval)
+                pendingApprovalsRefreshInterval = null
+
+            }
         }
 
         async function addNotification(title, message, type = 'info', memoId = null, titleKey = null, messageKey = null) {

@@ -110,53 +110,9 @@ const FIREBASE_DB_URL = "https://keyproject-84461-default-rtdb.asia-southeast1.f
 
 
 // Firebase Functions เพื่อดึง/บันทึกข้อมูล
-
-// ──────────────────────────────────────────────
-// Lightweight in-memory TTL cache for hot, full-collection Firebase reads
-// (e.g. 'users', 'followers', 'sent_memos'). This exists because several
-// endpoints were re-downloading the SAME full node from Firebase on every
-// single request (sometimes several times per request, and some of them
-// were polled from the client every few seconds), which was the main
-// driver of Realtime Database download/bandwidth usage.
-//
-// Any firebase_set/firebase_delete automatically invalidates the cache for
-// that path's top-level collection, so writes are visible immediately -
-// only reads within the TTL window of OTHER requests get served from cache.
-// ──────────────────────────────────────────────
-const firebaseReadCache = new Map() // topLevelPath -> { data, expiresAt, pending }
-
-function invalidateFirebaseCache(path) {
-  const topLevel = String(path).split('/')[0]
-  firebaseReadCache.delete(topLevel)
-}
-
-async function firebase_get_cached(path, ttlMs = 15000) {
-  const now = Date.now()
-  const entry = firebaseReadCache.get(path)
-
-  if (entry) {
-    if (entry.pending) return entry.pending // dedupe concurrent in-flight requests
-    if (entry.expiresAt > now) return entry.data
-  }
-
-  const pending = firebase_get(path).then(data => {
-    firebaseReadCache.set(path, { data, expiresAt: Date.now() + ttlMs, pending: null })
-    return data
-  }).catch(err => {
-    firebaseReadCache.delete(path)
-    throw err
-  })
-
-  firebaseReadCache.set(path, { data: entry ? entry.data : null, expiresAt: now, pending })
-  return pending
-}
-
 async function firebase_set(path, data) {
   try {
-    // print=silent: don't have Firebase echo the written data back in the
-    // response body - we already have it locally, so downloading it again
-    // on every write was pure wasted bandwidth.
-    const url = `${FIREBASE_DB_URL}/${path}.json?print=silent`
+    const url = `${FIREBASE_DB_URL}/${path}.json`
 
     const response = await fetch(url, {
       method: "PUT",
@@ -164,12 +120,13 @@ async function firebase_set(path, data) {
       body: JSON.stringify(data)
     })
 
+    const result = await response.json()
+
     if (!response.ok) {
       throw new Error(`Firebase set failed: ${response.status} ${response.statusText}`)
     }
 
-    invalidateFirebaseCache(path)
-    return data
+    return result
   } catch (err) {
     throw err
   }
@@ -187,9 +144,8 @@ async function firebase_get(path) {
 
 async function firebase_delete(path) {
   try {
-    const url = `${FIREBASE_DB_URL}/${path}.json?print=silent`
+    const url = `${FIREBASE_DB_URL}/${path}.json`
     await fetch(url, { method: "DELETE" })
-    invalidateFirebaseCache(path)
   } catch (err) {
     throw err
   }
@@ -253,7 +209,7 @@ app.post("/register", async (req, res) => {
     const userId = `user_${Date.now()}`
 
     // Check if this is the first user - if so, make them admin
-    const allUsers = await firebase_get_cached('users', 10000)
+    const allUsers = await firebase_get('users')
     const isFirstUser = !allUsers || Object.keys(allUsers).length === 0
 
     const userData = {
@@ -277,7 +233,7 @@ app.post("/register", async (req, res) => {
     // Send notification to all admin users about the new registration
     if (!isFirstUser) {
       try {
-        const allUsersList = await firebase_get_cached('users', 10000)
+        const allUsersList = await firebase_get('users')
         if (allUsersList && typeof allUsersList === 'object') {
           for (const [, user] of Object.entries(allUsersList)) {
             if (user.role === 'admin') {
@@ -394,7 +350,7 @@ app.get("/pending-users", verifyToken, async (req, res) => {
     }
 
     // Fetch all users and filter for pending status
-    const allUsers = await firebase_get_cached('users', 10000)
+    const allUsers = await firebase_get('users')
     const pendingUsers = []
 
     for (const uid in allUsers) {
@@ -941,11 +897,11 @@ app.get("/user/linked-followers-with-pictures", verifyToken, async (req, res) =>
     }
 
     // Get followers database
-    const followersData = await firebase_get_cached('followers', 10000)
+    const followersData = await firebase_get('followers')
     const followerProfiles = followersData || {}
 
     // Get all users to find who has linked followers
-    const allUsersData = await firebase_get_cached('users', 10000)
+    const allUsersData = await firebase_get('users')
 
     const linkedFollowers = []
 
@@ -1031,7 +987,7 @@ app.get("/api/user/:userId", verifyToken, async (req, res) => {
 app.get("/api/memo/:memoId", verifyToken, async (req, res) => {
   try {
     const { memoId } = req.params
-    const allUsers = await firebase_get_cached('users', 10000)
+    const allUsers = await firebase_get('users')
     let foundMemo = null
 
     // Search for memo across all users' sent_memos
@@ -1096,7 +1052,7 @@ app.get("/next-doc-number", verifyToken, async (req, res) => {
     const currentYear = new Date().getFullYear().toString().slice(-2) // Get last 2 digits of year
 
     // Get all users to scan through their sent_memos
-    const allUsersData = await firebase_get_cached('users', 10000)
+    const allUsersData = await firebase_get('users')
 
     const allMemos = []
 
@@ -1148,7 +1104,7 @@ app.get("/next-rdproject-number", verifyToken, async (req, res) => {
     const currentYear = new Date().getFullYear().toString().slice(-2) // Get last 2 digits of year
 
     // Get all users to scan through their sent_memos for R&D projects
-    const allUsersData = await firebase_get_cached('users', 10000)
+    const allUsersData = await firebase_get('users')
 
     const allRDProjects = []
 
@@ -1202,7 +1158,7 @@ app.get("/next-rawmat-number", verifyToken, async (req, res) => {
     const currentYear = new Date().getFullYear().toString().slice(-2) // Get last 2 digits of year
 
     // Get all users to scan through their received_memos for Raw Material Requests
-    const allUsersData = await firebase_get_cached('users', 10000)
+    const allUsersData = await firebase_get('users')
 
     const allRawMatRequests = []
 
@@ -1257,7 +1213,7 @@ app.get("/user/is-approver", verifyToken, async (req, res) => {
     const userId = req.userId
 
     // Get approver assignments for this user
-    const approversData = await firebase_get_cached('memoApprovers', 20000)
+    const approversData = await firebase_get('memoApprovers')
     let isApprover = false
     let approvalCount = 0
 
@@ -1271,7 +1227,7 @@ app.get("/user/is-approver", verifyToken, async (req, res) => {
     }
 
     // Check if the user is configured as the Sample Product Approver
-    const rolesData = await firebase_get_cached('rd_project_roles', 20000)
+    const rolesData = await firebase_get('rd_project_roles')
     if (rolesData && rolesData.sampleProdApproverId === userId) {
       isApprover = true
     }
@@ -1288,7 +1244,7 @@ app.get("/user/is-rdproject-approver", verifyToken, async (req, res) => {
     const userId = req.userId
 
     // Get R&D Project roles
-    const rolesData = await firebase_get_cached('rd_project_roles', 20000)
+    const rolesData = await firebase_get('rd_project_roles')
     let isRDProjectApprover = false
 
     if (rolesData && rolesData.approverUserId === userId) {
@@ -1307,7 +1263,7 @@ app.get("/user/is-rawmat-approver", verifyToken, async (req, res) => {
     const userId = req.userId
 
     // Get Raw Material approval roles
-    const rolesData = await firebase_get_cached('rd_project_roles', 20000)
+    const rolesData = await firebase_get('rd_project_roles')
     let isRawMatApprover = false
 
     if (rolesData) {
@@ -1383,8 +1339,8 @@ app.get("/memos/user-stats", verifyToken, async (req, res) => {
 
 app.get("/departments", async (req, res) => {
   try {
-    const departments = await firebase_get_cached('departments', 30000)
-    const departments2 = await firebase_get_cached('departments2', 30000)
+    const departments = await firebase_get('departments')
+    const departments2 = await firebase_get('departments2')
 
     res.json({
       departments: (departments && typeof departments === 'object') ? Object.values(departments) : [],
@@ -1398,7 +1354,7 @@ app.get("/departments", async (req, res) => {
 // Get all users (admin and regular users)
 app.get("/admin/users", verifyToken, async (req, res) => {
   try {
-    const allUsersData = await firebase_get_cached('users', 10000)
+    const allUsersData = await firebase_get('users')
     if (!allUsersData) {
       return res.json({ users: [] })
     }
@@ -1439,7 +1395,7 @@ app.delete("/admin/users/:userId", verifyToken, async (req, res) => {
     }
 
     // Don't allow deleting the only admin
-    const allUsers = await firebase_get_cached('users', 10000)
+    const allUsers = await firebase_get('users')
     const adminCount = Object.values(allUsers || {}).filter(u => u.role === 'admin').length
     if (userToDelete.role === 'admin' && adminCount <= 1) {
       return res.status(400).json({ error: "Cannot delete the last admin user" })
@@ -1491,7 +1447,7 @@ app.put("/admin/users/:userId/role", verifyToken, async (req, res) => {
 
     // Can't demote the only admin
     if (userToUpdate.role === 'admin' && role === 'user') {
-      const allUsers = await firebase_get_cached('users', 10000)
+      const allUsers = await firebase_get('users')
       const adminCount = Object.values(allUsers || {}).filter(u => u.role === 'admin').length
       if (adminCount <= 1) {
         return res.status(400).json({ error: "Cannot demote the last admin user" })
@@ -1569,7 +1525,7 @@ app.get("/admin/all-linked-followers", verifyToken, async (req, res) => {
       return res.status(403).json({ error: "Admin access required" })
     }
 
-    const allUsersData = await firebase_get_cached('users', 10000)
+    const allUsersData = await firebase_get('users')
     if (!allUsersData) {
       return res.json({ linkedFollowers: [] })
     }
@@ -1732,8 +1688,8 @@ app.delete("/admin/departments/:deptId", verifyToken, async (req, res) => {
 app.get("/department-links-public", async (req, res) => {
   try {
     const links = await firebase_get('departmentLinks')
-    const departments = await firebase_get_cached('departments', 30000)
-    const departments2 = await firebase_get_cached('departments2', 30000)
+    const departments = await firebase_get('departments')
+    const departments2 = await firebase_get('departments2')
 
     // Build the response with department and subdepartment names
     let formattedLinks = []
@@ -1769,8 +1725,8 @@ app.get("/admin/department-links", verifyToken, async (req, res) => {
     }
 
     const links = await firebase_get('departmentLinks')
-    const departments = await firebase_get_cached('departments', 30000)
-    const departments2 = await firebase_get_cached('departments2', 30000)
+    const departments = await firebase_get('departments')
+    const departments2 = await firebase_get('departments2')
 
     // Build the response with department and subdepartment names
     let formattedLinks = []
@@ -1920,9 +1876,9 @@ app.get("/admin/memo-approvers", verifyToken, async (req, res) => {
       return res.status(403).json({ error: "Admin access required" })
     }
 
-    const approvers = await firebase_get_cached('memoApprovers', 20000)
-    const departments = await firebase_get_cached('departments', 30000)
-    const departments2 = await firebase_get_cached('departments2', 30000)
+    const approvers = await firebase_get('memoApprovers')
+    const departments = await firebase_get('departments')
+    const departments2 = await firebase_get('departments2')
 
     let formattedApprovers = []
     if (approvers && typeof approvers === 'object') {
@@ -1953,7 +1909,7 @@ app.get("/admin/memo-approvers", verifyToken, async (req, res) => {
 // Get memo approvers (authenticated users - for checking if current user is an approver)
 app.get("/memo-approvers", verifyToken, async (req, res) => {
   try {
-    const approvers = await firebase_get_cached('memoApprovers', 20000)
+    const approvers = await firebase_get('memoApprovers')
 
     if (!approvers) {
       return res.json({ approvers: [] })
@@ -2191,7 +2147,7 @@ app.post("/send", async (req, res) => {
     // Look for approvers for this sender's department
     if (sender && sender.department) {
       // First, convert department name to departmentId by looking in departments
-      const allDepartments = await firebase_get_cached('departments', 30000)
+      const allDepartments = await firebase_get('departments')
       let senderDepartmentId = sender.department  // Default to stored value
 
       // Try to find matching department by name
@@ -2205,7 +2161,7 @@ app.post("/send", async (req, res) => {
       }
 
       // Convert department2 name to ID
-      const allDepartments2 = await firebase_get_cached('departments2', 30000)
+      const allDepartments2 = await firebase_get('departments2')
       let senderSubDepartmentId = sender.department2
 
       // Try to find matching sub-department by name
@@ -2218,7 +2174,7 @@ app.post("/send", async (req, res) => {
         }
       }
 
-      const approvers = await firebase_get_cached('memoApprovers', 20000)
+      const approvers = await firebase_get('memoApprovers')
 
       if (approvers && typeof approvers === 'object') {
         for (const [approverKey, approver] of Object.entries(approvers)) {
@@ -2629,7 +2585,7 @@ app.get("/memos/pending-approval", verifyToken, async (req, res) => {
     }
 
     const pendingMemos = []
-    const allUsers = await firebase_get_cached('users', 10000)
+    const allUsers = await firebase_get('users')
 
     if (!allUsers || typeof allUsers !== 'object') {
       return res.json({ pendingMemos: [], count: 0 })
@@ -2640,8 +2596,9 @@ app.get("/memos/pending-approval", verifyToken, async (req, res) => {
     // If admin, get all pending approval memos without checking approvers
     if (currentUser.role === 'admin') {
       // ✅ Parallel: fetch all sent_memos ทีเดียว
-      const __sentMemosAll = await firebase_get_cached('sent_memos', 10000) || {}
-      const allSentMemosArray = senderIds.map(senderId => __sentMemosAll[senderId] || null)
+      const allSentMemosArray = await Promise.all(
+        senderIds.map(senderId => firebase_get(`sent_memos/${senderId}`).catch(() => null))
+      )
 
       senderIds.forEach((senderId, idx) => {
         const sender = allUsers[senderId]
@@ -2706,7 +2663,7 @@ app.get("/memos/pending-approval", verifyToken, async (req, res) => {
     } else {
       // Regular approver - check if user is in memoApprovers or R&D Project approver
       // Get all approver assignments for this user
-      const approversData = await firebase_get_cached('memoApprovers', 20000)
+      const approversData = await firebase_get('memoApprovers')
       const userApprovals = []
 
       if (approversData && typeof approversData === 'object') {
@@ -2718,7 +2675,7 @@ app.get("/memos/pending-approval", verifyToken, async (req, res) => {
       }
 
       // Check if user is R&D Project approver
-      const rolesData = await firebase_get_cached('rd_project_roles', 20000)
+      const rolesData = await firebase_get('rd_project_roles')
       const isRDProjectApprover = rolesData && rolesData.approverUserId === userId
 
       // Check if user is Sample Product approver
@@ -2734,7 +2691,7 @@ app.get("/memos/pending-approval", verifyToken, async (req, res) => {
       }
 
       // Get all departments mapping for name->UUID conversion
-      const allDepartments = await firebase_get_cached('departments', 30000)
+      const allDepartments = await firebase_get('departments')
       const departmentNameToId = {}
       if (allDepartments && typeof allDepartments === 'object') {
         for (const [deptId, dept] of Object.entries(allDepartments)) {
@@ -2745,7 +2702,7 @@ app.get("/memos/pending-approval", verifyToken, async (req, res) => {
       }
 
       // Get all sub-departments mapping for name->UUID conversion
-      const allDepartments2 = await firebase_get_cached('departments2', 30000)
+      const allDepartments2 = await firebase_get('departments2')
       const subDepartmentNameToId = {}
       if (allDepartments2 && typeof allDepartments2 === 'object') {
         for (const [deptId, dept] of Object.entries(allDepartments2)) {
@@ -2756,8 +2713,9 @@ app.get("/memos/pending-approval", verifyToken, async (req, res) => {
       }
 
       // Get all users' sent_memos to find pending_approval ones (PARALLEL)
-      const __sentMemosAll = await firebase_get_cached('sent_memos', 10000) || {}
-      const allSentMemosArray = senderIds.map(senderId => __sentMemosAll[senderId] || null)
+      const allSentMemosArray = await Promise.all(
+        senderIds.map(senderId => firebase_get(`sent_memos/${senderId}`).catch(() => null))
+      )
 
       // Also check current user's received_memos for R&D project final_approval stage
       const userReceivedMemos = await firebase_get(`received_memos/${userId}`)
@@ -2935,7 +2893,7 @@ app.post("/memo/approve/:memoId", verifyToken, async (req, res) => {
     const { notes } = req.body
 
     // Find the memo in sent_memos
-    const allUsers = await firebase_get_cached('users', 10000)
+    const allUsers = await firebase_get('users')
     let memoData = null
     let memoSenderId = null
 
@@ -2967,7 +2925,7 @@ app.post("/memo/approve/:memoId", verifyToken, async (req, res) => {
     } else if (memoData.isRDProject) {
       // Check if user is R&D Project approver (and not the sender)
       if (req.userId !== memoSenderId) {
-        const rolesData = await firebase_get_cached('rd_project_roles', 20000)
+        const rolesData = await firebase_get('rd_project_roles')
         if (rolesData && rolesData.approverUserId === req.userId) {
           isAuthorizedApprover = true
         }
@@ -2980,10 +2938,10 @@ app.post("/memo/approve/:memoId", verifyToken, async (req, res) => {
       // AND is not the sender (user cannot approve their own memo)
       if (req.userId !== memoSenderId) {
         const sender = await firebase_get(`users/${memoSenderId}`)
-        const approvers = await firebase_get_cached('memoApprovers', 20000)
+        const approvers = await firebase_get('memoApprovers')
 
         // Convert sender's department name to UUID for comparison
-        const allDepartments = await firebase_get_cached('departments', 30000)
+        const allDepartments = await firebase_get('departments')
         let senderDepartmentId = sender.department
         if (allDepartments && typeof allDepartments === 'object') {
           for (const [deptId, dept] of Object.entries(allDepartments)) {
@@ -2995,7 +2953,7 @@ app.post("/memo/approve/:memoId", verifyToken, async (req, res) => {
         }
 
         // Convert sender's sub-department name to UUID for comparison
-        const allDepartments2 = await firebase_get_cached('departments2', 30000)
+        const allDepartments2 = await firebase_get('departments2')
         let senderSubDepartmentId = sender.department2
         if (allDepartments2 && typeof allDepartments2 === 'object') {
           for (const [subDeptId, subDept] of Object.entries(allDepartments2)) {
@@ -3382,7 +3340,7 @@ app.post("/memo/reject/:memoId", verifyToken, async (req, res) => {
     const rejectionReason = reason || "No reason provided"
 
     // Find the memo
-    const allUsers = await firebase_get_cached('users', 10000)
+    const allUsers = await firebase_get('users')
     let memoData = null
     let memoSenderId = null
 
@@ -3407,10 +3365,10 @@ app.post("/memo/reject/:memoId", verifyToken, async (req, res) => {
 
     // Verify authorization
     const sender = await firebase_get(`users/${memoSenderId}`)
-    const approvers = await firebase_get_cached('memoApprovers', 20000)
+    const approvers = await firebase_get('memoApprovers')
 
     // Convert sender's department name to UUID for comparison
-    const allDepartments = await firebase_get_cached('departments', 30000)
+    const allDepartments = await firebase_get('departments')
     let senderDepartmentId = sender.department
     if (allDepartments && typeof allDepartments === 'object') {
       for (const [deptId, dept] of Object.entries(allDepartments)) {
@@ -3422,7 +3380,7 @@ app.post("/memo/reject/:memoId", verifyToken, async (req, res) => {
     }
 
     // Convert sender's sub-department name to UUID for comparison
-    const allDepartments2 = await firebase_get_cached('departments2', 30000)
+    const allDepartments2 = await firebase_get('departments2')
     let senderSubDepartmentId = sender.department2
     if (allDepartments2 && typeof allDepartments2 === 'object') {
       for (const [subDeptId, subDept] of Object.entries(allDepartments2)) {
@@ -3535,7 +3493,7 @@ app.post("/memo/acknowledge/:memoId", verifyToken, async (req, res) => {
 
     if (!receivedMemo) {
       // If not in received_memos, search for it in sent_memos (for linked followers)
-      const allUsers = await firebase_get_cached('users', 10000)
+      const allUsers = await firebase_get('users')
       if (allUsers && typeof allUsers === 'object') {
         for (let userId in allUsers) {
           const sentMemos = await firebase_get(`sent_memos/${userId}`)
@@ -3866,7 +3824,7 @@ app.get("/admin/user-tabs", verifyToken, async (req, res) => {
     }
 
     const allTabAccess = await firebase_get('tabAccess')
-    const allUsers = await firebase_get_cached('users', 10000)
+    const allUsers = await firebase_get('users')
 
     let tabAccessList = []
 
@@ -4055,7 +4013,7 @@ app.post("/broadcast", async (req, res) => {
   }
 
   try {
-    const followers = await firebase_get_cached("followers", 10000)
+    const followers = await firebase_get("followers")
 
     if (!followers || typeof followers !== 'object') {
       return res.json({ status: "no followers", successCount: 0, errorCount: 0, totalFollowers: 0 })
@@ -4092,7 +4050,7 @@ app.get("/sent-memos", verifyToken, async (req, res) => {
   try {
     const userId = req.userId
     const currentUser = await firebase_get(`users/${userId}`)
-    const allUsers = await firebase_get_cached('users', 10000)
+    const allUsers = await firebase_get('users')
 
     let memosArray = []
 
@@ -4101,8 +4059,9 @@ app.get("/sent-memos", verifyToken, async (req, res) => {
       if (allUsers && typeof allUsers === 'object') {
         const userIds = Object.keys(allUsers)
         // ✅ Parallel: fetch all sent_memos ทีเดียว
-        const __sentMemosAll = await firebase_get_cached('sent_memos', 10000) || {}
-        const allSentMemosArray = userIds.map(uid => __sentMemosAll[uid] || null)
+        const allSentMemosArray = await Promise.all(
+          userIds.map(uid => firebase_get(`sent_memos/${uid}`).catch(() => null))
+        )
 
         allSentMemosArray.forEach(sentMemos => {
           if (sentMemos && typeof sentMemos === 'object') {
@@ -4187,7 +4146,7 @@ app.get("/received-memos", verifyToken, async (req, res) => {
 
     // Get current user to access linked followers
     const currentUser = await firebase_get(`users/${userId}`)
-    const allUsers = await firebase_get_cached('users', 10000)
+    const allUsers = await firebase_get('users')
 
     const receivedMemos = []
     const seenMemoIds = new Set() // Track already added memos to avoid duplicates
@@ -4201,8 +4160,9 @@ app.get("/received-memos", verifyToken, async (req, res) => {
     // If admin, get all memos sent to any follower
     if (currentUser && currentUser.role === 'admin') {
       // ✅ Parallel: fetch all sent_memos ทีเดียว
-      const __sentMemosAll = await firebase_get_cached('sent_memos', 10000) || {}
-      const allSentMemosArray = senderIds.map(senderId => __sentMemosAll[senderId] || null)
+      const allSentMemosArray = await Promise.all(
+        senderIds.map(senderId => firebase_get(`sent_memos/${senderId}`).catch(() => null))
+      )
 
       senderIds.forEach((senderId, idx) => {
         const senderMemos = allSentMemosArray[idx]
@@ -4250,8 +4210,9 @@ app.get("/received-memos", verifyToken, async (req, res) => {
 
       if (linkedFollowerIds.length > 0) {
         // ✅ Parallel: fetch all sent_memos ทีเดียว
-        const __sentMemosAll = await firebase_get_cached('sent_memos', 10000) || {}
-        const allSentMemosArray = senderIds.map(senderId => __sentMemosAll[senderId] || null)
+        const allSentMemosArray = await Promise.all(
+          senderIds.map(senderId => firebase_get(`sent_memos/${senderId}`).catch(() => null))
+        )
 
         senderIds.forEach((senderId, idx) => {
           const senderMemos = allSentMemosArray[idx]
@@ -4301,8 +4262,9 @@ app.get("/received-memos", verifyToken, async (req, res) => {
 
       // ✅ NEW: Include memos where current user has approved or rejected
       // Fetch all sent_memos to find memos where user is in approvalChain or rejected
-      const __sentMemosAll = await firebase_get_cached('sent_memos', 10000) || {}
-      const allSentMemosArray = senderIds.map(senderId => __sentMemosAll[senderId] || null)
+      const allSentMemosArray = await Promise.all(
+        senderIds.map(senderId => firebase_get(`sent_memos/${senderId}`).catch(() => null))
+      )
 
       senderIds.forEach((senderId, idx) => {
         const senderMemos = allSentMemosArray[idx]
@@ -4352,7 +4314,7 @@ app.get("/memo/:memoId", async (req, res) => {
     const memoId = req.params.memoId
 
     // Search in all users' sent_memos and received_memos
-    const allUsers = await firebase_get_cached('users', 10000)
+    const allUsers = await firebase_get('users')
     if (!allUsers || typeof allUsers !== 'object') {
       return res.status(404).json({ error: 'Memo not found' })
     }
@@ -4409,7 +4371,7 @@ app.put("/memo/:memoId", verifyToken, async (req, res) => {
     }
 
     // Find the memo - it could be in any user's sent_memos or received_memos
-    const allUsers = await firebase_get_cached('users', 10000)
+    const allUsers = await firebase_get('users')
     if (!allUsers || typeof allUsers !== 'object') {
       return res.status(404).json({ error: 'Memo not found' })
     }
@@ -4463,7 +4425,7 @@ app.put("/memo/:memoId", verifyToken, async (req, res) => {
 
     // Check for duplicate docNumber if it's being changed
     if (docNumber !== oldDocNumber) {
-      const allUsers = await firebase_get_cached('users', 10000)
+      const allUsers = await firebase_get('users')
       if (allUsers && typeof allUsers === 'object') {
         for (const [uid, userObj] of Object.entries(allUsers)) {
           const sentMemos = await firebase_get(`sent_memos/${uid}`)
@@ -4495,7 +4457,7 @@ app.put("/memo/:memoId", verifyToken, async (req, res) => {
 
     // Update all received_memos with the OLD docNumber to use the NEW docNumber
     if (oldDocNumber) {
-      const allUsers = await firebase_get_cached('users', 10000)
+      const allUsers = await firebase_get('users')
       if (allUsers && typeof allUsers === 'object') {
         for (const [uid, userObj] of Object.entries(allUsers)) {
           const receivedMemos = await firebase_get(`received_memos/${uid}`)
@@ -4550,7 +4512,7 @@ app.delete("/memo/:memoId", verifyToken, async (req, res) => {
     }
 
     // Find the memo - it could be in any user's sent_memos or received_memos
-    const allUsers = await firebase_get_cached('users', 10000)
+    const allUsers = await firebase_get('users')
     if (!allUsers || typeof allUsers !== 'object') {
       return res.status(404).json({ error: 'Memo not found' })
     }
@@ -4612,7 +4574,7 @@ app.delete("/memo/:memoId", verifyToken, async (req, res) => {
     if (!isReceivedMemo) {
       const docNumber = memoData?.docNumber
       if (docNumber) {
-        const allUsers = await firebase_get_cached('users', 10000)
+        const allUsers = await firebase_get('users')
         if (allUsers && typeof allUsers === 'object') {
           for (const [uid, userObj] of Object.entries(allUsers)) {
             const receivedMemos = await firebase_get(`received_memos/${uid}`)
@@ -4688,7 +4650,7 @@ app.post("/memo/:memoId/cc", verifyToken, async (req, res) => {
 
     // If still not found and user is admin, search in all users' sent_memos
     if (!memo && currentUser && currentUser.role === 'admin') {
-      const allUsers = await firebase_get_cached('users', 10000)
+      const allUsers = await firebase_get('users')
       if (allUsers && typeof allUsers === 'object') {
         for (const userId in allUsers) {
           memo = await firebase_get(`sent_memos/${userId}/${memoId}`)
@@ -5153,7 +5115,7 @@ app.post("/send-system-memo", verifyToken, async (req, res) => {
     // Look for approvers for this sender's department
     if (sender && sender.department) {
       // First, convert department name to departmentId by looking in departments
-      const allDepartments = await firebase_get_cached('departments', 30000)
+      const allDepartments = await firebase_get('departments')
       let senderDepartmentId = sender.department  // Default to stored value
 
       // Try to find matching department by name
@@ -5167,7 +5129,7 @@ app.post("/send-system-memo", verifyToken, async (req, res) => {
       }
 
       // Convert department2 name to ID
-      const allDepartments2 = await firebase_get_cached('departments2', 30000)
+      const allDepartments2 = await firebase_get('departments2')
       let senderSubDepartmentId = sender.department2
 
       // Try to find matching sub-department by name
@@ -5180,7 +5142,7 @@ app.post("/send-system-memo", verifyToken, async (req, res) => {
         }
       }
 
-      const approvers = await firebase_get_cached('memoApprovers', 20000)
+      const approvers = await firebase_get('memoApprovers')
 
       if (approvers && typeof approvers === 'object') {
         for (const [approverKey, approver] of Object.entries(approvers)) {
@@ -5497,7 +5459,7 @@ app.delete("/notifications", verifyToken, async (req, res) => {
 // Get followers list
 app.get("/followers", async (req, res) => {
   try {
-    const followers = await firebase_get_cached("followers", 10000)
+    const followers = await firebase_get("followers")
 
     if (!followers || typeof followers !== 'object') {
       return res.json({
@@ -5547,7 +5509,7 @@ app.post("/refresh-profile/:userId", async (req, res) => {
 // Refresh all profiles
 app.post("/refresh-all-profiles", async (req, res) => {
   try {
-    const followers = await firebase_get_cached("followers", 10000)
+    const followers = await firebase_get("followers")
     if (!followers || typeof followers !== 'object') {
       return res.json({ status: "no followers", refreshed: 0 })
     }
@@ -5604,7 +5566,7 @@ app.post("/test-add-follower", async (req, res) => {
 // Debug endpoint - ตรวจสอบ Firebase
 app.get("/debug", async (req, res) => {
   try {
-    const followers = await firebase_get_cached("followers", 10000)
+    const followers = await firebase_get("followers")
 
     res.json({
       status: "debug",
@@ -5623,13 +5585,13 @@ app.get("/debug/memo-approval/:senderUserId", async (req, res) => {
     const { senderUserId } = req.params
 
     const sender = await firebase_get(`users/${senderUserId}`)
-    const approvers = await firebase_get_cached('memoApprovers', 20000)
+    const approvers = await firebase_get('memoApprovers')
 
     let matchedApprovers = []
 
     if (sender && sender.department && approvers) {
       // Convert department name to ID
-      const allDepartments = await firebase_get_cached('departments', 30000)
+      const allDepartments = await firebase_get('departments')
       let senderDepartmentId = sender.department
       if (allDepartments && typeof allDepartments === 'object') {
         for (const [deptId, dept] of Object.entries(allDepartments)) {
@@ -5641,7 +5603,7 @@ app.get("/debug/memo-approval/:senderUserId", async (req, res) => {
       }
 
       // Convert department2 name to ID
-      const allDepartments2 = await firebase_get_cached('departments2', 30000)
+      const allDepartments2 = await firebase_get('departments2')
       let senderSubDepartmentId = sender.department2
       if (allDepartments2 && typeof allDepartments2 === 'object') {
         for (const [deptId, dept] of Object.entries(allDepartments2)) {
@@ -5837,7 +5799,7 @@ app.post("/api/rdproject/roles/set", verifyToken, async (req, res) => {
     }
 
     // Get existing roles to preserve other settings
-    const existingRoles = await firebase_get_cached('rd_project_roles', 20000) || {}
+    const existingRoles = await firebase_get('rd_project_roles') || {}
 
     // Build new roles data - preserve existing values if not being updated
     const rolesData = {
@@ -5912,7 +5874,7 @@ app.post("/api/rdproject/roles/set", verifyToken, async (req, res) => {
 // Get R&D Project roles
 app.get("/api/rdproject/roles", verifyToken, async (req, res) => {
   try {
-    const rolesData = await firebase_get_cached('rd_project_roles', 20000)
+    const rolesData = await firebase_get('rd_project_roles')
 
     if (!rolesData) {
       return res.json({
@@ -6029,7 +5991,7 @@ app.post("/api/rawmat/approver/set", verifyToken, async (req, res) => {
     }
 
     // Get existing roles
-    const existingRoles = await firebase_get_cached('rd_project_roles', 20000) || {}
+    const existingRoles = await firebase_get('rd_project_roles') || {}
 
     // Update with rawmat approver
     const rolesData = {
@@ -6060,7 +6022,7 @@ app.post("/api/rdproject", verifyToken, async (req, res) => {
     }
 
     // Get R&D Project roles
-    const rolesData = await firebase_get_cached('rd_project_roles', 20000)
+    const rolesData = await firebase_get('rd_project_roles')
     if (!rolesData || !rolesData.approverUserId || !rolesData.engineerUserId) {
       return res.status(400).json({ error: "R&D Project roles not configured. Please assign approver and engineer first." })
     }
@@ -6365,7 +6327,7 @@ app.post("/api/rawmat", verifyToken, async (req, res) => {
     }
 
     // Get admin-configured roles from rd_project_roles
-    const rolesData = await firebase_get_cached('rd_project_roles', 20000)
+    const rolesData = await firebase_get('rd_project_roles')
 
     // Extract first and second approvers from admin config
     const firstApproverId = rolesData?.rawMatFirstApproverId
@@ -6836,7 +6798,7 @@ app.post("/api/rawmat/:memoId/approve", verifyToken, async (req, res) => {
     const secondApproverName = secondApproverUser ? `${secondApproverUser.name} ${secondApproverUser.surname || ''}`.trim() : 'Unknown'
 
     // Get engineer from roles
-    const rolesData = await firebase_get_cached('rd_project_roles', 20000)
+    const rolesData = await firebase_get('rd_project_roles')
     const engineerId = rolesData?.engineerUserId
     const engineerName = rolesData?.engineerName
 
@@ -7622,7 +7584,7 @@ app.post("/api/rdproject/:projectId/approve", verifyToken, async (req, res) => {
     }
 
     // Get approver roles
-    const rolesData = await firebase_get_cached('rd_project_roles', 20000)
+    const rolesData = await firebase_get('rd_project_roles')
     const approverUserId = rolesData?.approverUserId
     const engineerUserId = rolesData?.engineerUserId
 
@@ -8149,7 +8111,7 @@ app.post("/api/rdproject/:projectId/approve", verifyToken, async (req, res) => {
 
       // Find the ORIGINAL initiator from original sent_memos
       let originalInitiatorUserId = projectData.initiatorUserId
-      const allUsers = await firebase_get_cached('users', 10000)
+      const allUsers = await firebase_get('users')
       if (allUsers && typeof allUsers === 'object') {
         for (const [userId, userObj] of Object.entries(allUsers)) {
           const sentMemos = await firebase_get(`sent_memos/${userId}`)
@@ -8569,7 +8531,7 @@ app.post("/api/rdproject/:projectId/approve", verifyToken, async (req, res) => {
 app.get("/next-sample-prod-number", verifyToken, async (req, res) => {
   try {
     const currentYear = new Date().getFullYear().toString().slice(-2)
-    const allUsersData = await firebase_get_cached('users', 10000)
+    const allUsersData = await firebase_get('users')
     const allRequests = []
 
     if (allUsersData && typeof allUsersData === 'object') {
@@ -8627,7 +8589,7 @@ app.post("/api/sample-product-request", verifyToken, async (req, res) => {
     }
 
     // Get admin-configured approver for sample product requests
-    const rolesData = await firebase_get_cached('rd_project_roles', 20000)
+    const rolesData = await firebase_get('rd_project_roles')
     const approverUserId = rolesData?.sampleProdApproverId
     const approverName = rolesData?.sampleProdApproverName
 
