@@ -6287,7 +6287,50 @@
       </div>
     </div>
 
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
     <script>
+        const firebaseApp = firebase.initializeApp({
+            databaseURL: 'https://keyproject-84461-default-rtdb.asia-southeast1.firebasedatabase.app'
+        })
+        const database = firebaseApp.database()
+
+        let presenceConnectedRef = null
+        let presenceConnectedCallback = null
+        let userPresenceRef = null
+
+        function setupPresence(userObj) {
+            if (presenceConnectedRef && presenceConnectedCallback) {
+                presenceConnectedRef.off('value', presenceConnectedCallback)
+            }
+
+            if (userPresenceRef) {
+                userPresenceRef.remove().catch(() => {})
+                userPresenceRef = null
+            }
+
+            presenceConnectedRef = database.ref('.info/connected')
+            presenceConnectedCallback = null
+
+            if (!userObj || !userObj.username) return
+
+            const presenceRef = database.ref('presence')
+            presenceConnectedCallback = snapshot => {
+                if (snapshot.val() !== true) return
+
+                userPresenceRef = presenceRef.child(userObj.username)
+                userPresenceRef.set({
+                    username: userObj.username,
+                    fullName: userObj.fullName || `${userObj.name || ''} ${userObj.surname || ''}`.trim(),
+                    online: true,
+                    lastActive: firebase.database.ServerValue.TIMESTAMP
+                })
+                userPresenceRef.onDisconnect().remove()
+            }
+
+            presenceConnectedRef.on('value', presenceConnectedCallback)
+        }
+
         // ── Handle Broken Memo Images ────────────────────────
         function handleMemoImageError() {
             // Hide the image field if image fails to load (404, broken URL, etc.)
@@ -8714,6 +8757,7 @@
         if (savedUser) {
             try {
                 currentUser = JSON.parse(savedUser)
+                setupPresence(currentUser)
             } catch (e) {
                 console.warn('Failed to parse saved user data:', e)
             }
@@ -8752,6 +8796,7 @@
                 if (!res.ok) {
                     localStorage.removeItem('authToken')
                     localStorage.removeItem('currentUser')
+                    setupPresence(null)
                     authToken = null
                     showView('login')
                     return
@@ -8759,6 +8804,7 @@
                 const user = await res.json()
                 currentUser = user
                 localStorage.setItem('currentUser', JSON.stringify(currentUser))
+                setupPresence(currentUser)
 
                 // Log persistent login (เข้าใช้ค้างไว้)
                 try {
@@ -8784,6 +8830,7 @@
             } catch (err) {
                 localStorage.removeItem('authToken')
                 localStorage.removeItem('currentUser')
+                setupPresence(null)
                 authToken = null
                 showView('login')
             }
@@ -9358,6 +9405,7 @@
 
                     document.getElementById('loginUsername').value = ''
                     document.getElementById('loginPassword').value = ''
+                    setupPresence(currentUser)
                     await updateUIForLoggedIn()
                     // Load user data and linked profile after successful login
                     await loadUserData()
@@ -9385,6 +9433,7 @@
 
             localStorage.removeItem('authToken')
             localStorage.removeItem('currentUser')
+            setupPresence(null)
             authToken = null
             currentUser = null
             notifications = []
