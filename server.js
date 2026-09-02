@@ -8897,6 +8897,101 @@ app.post("/api/sample-product-request", verifyToken, async (req, res) => {
               navigateTo: 'received-memos'
             }
             await firebase_set(`notifications/${rid}/${rNotifId}`, rNotification)
+
+            // Send LINE notification to all linked followers of each recipient
+            const recipientUser = await firebase_get(`users/${rid}`)
+            const recipientFollowerIds = recipientUser && recipientUser.linkedFollowers
+              ? Object.keys(recipientUser.linkedFollowers)
+              : []
+
+            if (recipientFollowerIds.length > 0) {
+              const recipientLineMessage = {
+                type: 'flex',
+                altText: `ขอสินค้าตัวอย่างจาก ${senderName}`,
+                contents: {
+                  type: 'bubble',
+                  header: {
+                    type: 'box',
+                    layout: 'vertical',
+                    contents: [
+                      {
+                        type: 'text',
+                        text: 'ขอสินค้าตัวอย่าง',
+                        weight: 'bold',
+                        size: 'xl',
+                        color: '#1e2c4e'
+                      }
+                    ]
+                  },
+                  body: {
+                    type: 'box',
+                    layout: 'vertical',
+                    spacing: 'md',
+                    contents: [
+                      {
+                        type: 'text',
+                        text: `จาก: ${senderName}`,
+                        size: 'sm',
+                        color: '#1e2c4e',
+                        weight: 'bold'
+                      },
+                      {
+                        type: 'text',
+                        text: `เลขที่เอกสาร: ${documentNo}`,
+                        size: 'sm',
+                        color: '#1e2c4e',
+                        wrap: true
+                      },
+                      {
+                        type: 'text',
+                        text: `ลูกค้า: ${customerName || 'ไม่ระบุ'}`,
+                        size: 'sm',
+                        color: '#1e2c4e',
+                        wrap: true
+                      },
+                      {
+                        type: 'text',
+                        text: `วันที่ต้องการ: ${requiredDate || 'ไม่ระบุ'}`,
+                        size: 'sm',
+                        color: '#1e2c4e',
+                        wrap: true
+                      },
+                      {
+                        type: 'text',
+                        text: `ประเภทสินค้า: ${productType || 'ไม่ระบุ'}`,
+                        size: 'sm',
+                        color: '#1e2c4e',
+                        wrap: true
+                      }
+                    ]
+                  },
+                  footer: {
+                    type: 'box',
+                    layout: 'vertical',
+                    contents: [
+                      {
+                        type: 'button',
+                        action: {
+                          type: 'uri',
+                          label: 'ดูรายละเอียด',
+                          uri: 'https://rmcmemorandum.onrender.com/'
+                        },
+                        style: 'primary',
+                        color: '#1e2c4e'
+                      }
+                    ]
+                  }
+                }
+              }
+
+              for (const recipientFollowerId of recipientFollowerIds) {
+                try {
+                  await client.pushMessage(recipientFollowerId, recipientLineMessage)
+                } catch (lineErr) {
+                  console.warn('Failed to send LINE notification to sample product recipient follower:', lineErr.message)
+                }
+              }
+            }
           } catch (err) {
             console.warn('Failed to add recipient received_memo or notification for', rid, err.message)
           }
