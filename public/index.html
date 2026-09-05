@@ -16563,397 +16563,6 @@
             })
         }
 
-// function printMemoDetail() {
-//     if (!currentMemoDetail) return
-
-//     const printWindow = window.open('', '_blank')
-//     const memo = currentMemoDetail
-
-//     const sentDate = new Date(memo.sentAt)
-//     const dateStr = sentDate.toLocaleDateString('th-TH', {
-//         weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'
-//     })
-//     const timeStr = sentDate.toLocaleTimeString('th-TH', {
-//         hour: '2-digit', minute: '2-digit'
-//     })
-
-//     const isReceived = memo.senderName || memo.senderUserId
-
-//     // Build sender block
-//     const senderHTML = isReceived
-//         ? `<tr><td class="label">จาก (From)</td><td class="value">${escHtml(memo.senderName || 'ไม่ระบุ')}</td></tr>`
-//         : `<tr><td class="label">ผู้ส่ง (Sent By)</td><td class="value">${escHtml(memo.senderName || 'ไม่ระบุ')}</td></tr>`
-
-//     // Build recipients block
-//     let recipientsHTML = ''
-//     if (memo.recipientObjects?.length) {
-//         const names = memo.recipientObjects.map(r => {
-//             const dept = r.department ? ` (${escHtml(r.department)})` : ''
-//             return `${escHtml(r.name || 'ไม่ระบุ')}${dept}`
-//         }).join('<br>')
-//         recipientsHTML = `<tr><td class="label">ถึง (To)</td><td class="value">${names}</td></tr>`
-//     } else if (memo.recipientNames?.length) {
-//         recipientsHTML = `<tr><td class="label">ถึง (To)</td><td class="value">${memo.recipientNames.map(escHtml).join('<br>')}</td></tr>`
-//     } else if (memo.recipientName) {
-//         recipientsHTML = `<tr><td class="label">ถึง (To)</td><td class="value">${escHtml(memo.recipientName)}</td></tr>`
-//     }
-
-//     // Build approval block
-//     let approvalHTML = ''
-//     if (memo.status === 'approved' && memo.approvedByName) {
-//         approvalHTML = `
-//             <div class="approval-block approved">
-//                 <span class="approval-icon">✔</span>
-//                 <div>
-//                     <div class="approval-label">อนุมัติโดย (Approved By)</div>
-//                     <div class="approval-name">${escHtml(memo.approvedByName)}</div>
-//                     <div class="approval-date">${new Date(memo.approvedAt).toLocaleString('th-TH')}</div>
-//                 </div>
-//             </div>`
-//     } else if (memo.status === 'rejected' && memo.rejectedByName) {
-//         approvalHTML = `
-//             <div class="approval-block rejected">
-//                 <span class="approval-icon">✖</span>
-//                 <div>
-//                     <div class="approval-label">ไม่อนุมัติโดย (Rejected By)</div>
-//                     <div class="approval-name">${escHtml(memo.rejectedByName)}</div>
-//                     <div class="approval-date">${new Date(memo.rejectedAt).toLocaleString('th-TH')}</div>
-//                     ${memo.rejectionReason ? `<div class="rejection-reason">เหตุผล: ${escHtml(memo.rejectionReason)}</div>` : ''}
-//                 </div>
-//             </div>`
-//     } else if (memo.status === 'pending_approval') {
-//         approvalHTML = `
-//             <div class="approval-block pending">
-//                 <span class="approval-icon">⏳</span>
-//                 <div>
-//                     <div class="approval-label">สถานะการอนุมัติ</div>
-//                     <div class="approval-name">รอการอนุมัติ (Pending Approval)</div>
-//                 </div>
-//             </div>`
-//     }
-
-//     // Image block
-//     const imageHTML = memo.imageUrl
-//         ? `<div class="section-block"><div class="section-label">เอกสารแนบ (Attachment)</div><img src="${escHtml(memo.imageUrl)}" class="memo-image" /></div>`
-//         : ''
-
-//     printWindow.document.write(`
-//         <!DOCTYPE html>
-//         <html lang="th">
-//         <head>
-//             <meta charset="UTF-8">
-//             <title>${escHtml(memo.title)}</title>
-//             <style>
-//                 @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;600;700&family=Noto+Serif+Thai:wght@400;600;700&display=swap');
-
-//                 * { box-sizing: border-box; margin: 0; padding: 0; }
-
-//                 body {
-//                     font-family: 'Sarabun', 'TH Sarabun New', serif;
-//                     font-size: 14pt;
-//                     color: #1a1a2e;
-//                     background: #fff;
-//                     margin: 0;
-//                     padding: 0;
-//                 }
-
-//                 .page {
-//                     max-width: 210mm;
-//                     min-height: 297mm;
-//                     margin: 0 auto;
-//                     padding: 18mm 20mm 18mm 25mm;
-//                     position: relative;
-//                 }
-
-//                 /* Top border accent */
-//                 .page::before {
-//                     content: '';
-//                     display: block;
-//                     height: 6px;
-//                     background: linear-gradient(90deg, #1a3a6b 0%, #2e6da4 50%, #c9a84c 100%);
-//                     position: absolute;
-//                     top: 0; left: 0; right: 0;
-//                 }
-
-//                 /* LETTERHEAD */
-//                 .letterhead {
-//                     display: flex;
-//                     align-items: flex-start;
-//                     gap: 18px;
-//                     padding-bottom: 14px;
-//                     margin-bottom: 14px;
-//                     border-bottom: 2px solid #1a3a6b;
-//                 }
-
-//                 .org-logo {
-//                     width: 60px;
-//                     height: 60px;
-//                     border-radius: 50%;
-//                     background: linear-gradient(135deg, #1a3a6b, #2e6da4);
-//                     display: flex;
-//                     align-items: center;
-//                     justify-content: center;
-//                     color: #c9a84c;
-//                     font-size: 26px;
-//                     flex-shrink: 0;
-//                 }
-
-//                 .org-info { flex: 1; }
-
-//                 .org-name {
-//                     font-family: 'Noto Serif Thai', 'TH Sarabun New', serif;
-//                     font-size: 15pt;
-//                     font-weight: 700;
-//                     color: #1a3a6b;
-//                     line-height: 1.3;
-//                 }
-
-//                 .org-sub {
-//                     font-size: 10pt;
-//                     color: #5a6a80;
-//                     margin-top: 2px;
-//                 }
-
-//                 .doc-number {
-//                     text-align: right;
-//                     font-size: 10pt;
-//                     color: #5a6a80;
-//                     white-space: nowrap;
-//                     padding-top: 4px;
-//                 }
-//                 .doc-number strong { color: #1a3a6b; display: block; font-size: 11pt; }
-
-//                 /* DOCUMENT TYPE BADGE */
-//                 .doc-type-row {
-//                     text-align: center;
-//                     margin: 18px 0 10px;
-//                 }
-
-//                 .doc-type-badge {
-//                     display: inline-block;
-//                     font-family: 'Noto Serif Thai', serif;
-//                     font-size: 10.5pt;
-//                     font-weight: 600;
-//                     color: #1a3a6b;
-//                     letter-spacing: 0.14em;
-//                     text-transform: uppercase;
-//                     border: 1.5px solid #1a3a6b;
-//                     padding: 4px 22px;
-//                     border-radius: 2px;
-//                 }
-
-//                 /* TITLE */
-//                 .memo-title {
-//                     text-align: center;
-//                     font-family: 'Noto Serif Thai', 'TH Sarabun New', serif;
-//                     font-size: 18pt;
-//                     font-weight: 700;
-//                     color: #1a1a2e;
-//                     margin: 10px 0 20px;
-//                     line-height: 1.4;
-//                 }
-
-//                 /* META TABLE */
-//                 .meta-table {
-//                     width: 100%;
-//                     border-collapse: collapse;
-//                     margin-bottom: 20px;
-//                     font-size: 12pt;
-//                 }
-
-//                 .meta-table td { padding: 5px 8px; vertical-align: top; }
-
-//                 .meta-table .label {
-//                     width: 38%;
-//                     color: #5a6a80;
-//                     font-weight: 600;
-//                     padding-right: 12px;
-//                     border-right: 1px solid #d0d8e8;
-//                     white-space: nowrap;
-//                 }
-
-//                 .meta-table .value {
-//                     color: #1a1a2e;
-//                     padding-left: 14px;
-//                     line-height: 1.6;
-//                 }
-
-//                 .meta-table tr:not(:last-child) td {
-//                     border-bottom: 1px dotted #e0e6f0;
-//                 }
-
-//                 /* DIVIDER */
-//                 .divider {
-//                     border: none;
-//                     border-top: 1.5px solid #c9a84c;
-//                     margin: 20px 0;
-//                     opacity: 0.6;
-//                 }
-
-//                 /* CONTENT SECTION */
-//                 .section-label {
-//                     font-size: 10pt;
-//                     font-weight: 700;
-//                     color: #2e6da4;
-//                     letter-spacing: 0.08em;
-//                     text-transform: uppercase;
-//                     margin-bottom: 8px;
-//                     padding-bottom: 4px;
-//                     border-bottom: 1px solid #e0e6f0;
-//                 }
-
-//                 .section-block { margin-bottom: 20px; }
-
-//                 .memo-content {
-//                     font-size: 13pt;
-//                     line-height: 1.85;
-//                     color: #1a1a2e;
-//                     white-space: pre-wrap;
-//                     word-wrap: break-word;
-//                     text-align: justify;
-//                     padding: 14px 16px;
-//                     background: #f7f9fc;
-//                     border-left: 3px solid #2e6da4;
-//                     border-radius: 0 4px 4px 0;
-//                 }
-
-//                 /* IMAGE */
-//                 .memo-image {
-//                     max-width: 100%;
-//                     max-height: 200px;
-//                     display: block;
-//                     margin-top: 8px;
-//                     border: 1px solid #d0d8e8;
-//                     border-radius: 4px;
-//                 }
-
-//                 /* APPROVAL BLOCK */
-//                 .approval-block {
-//                     display: flex;
-//                     align-items: flex-start;
-//                     gap: 14px;
-//                     padding: 12px 16px;
-//                     border-radius: 4px;
-//                     margin-top: 22px;
-//                     border: 1px solid;
-//                 }
-
-//                 .approval-block.approved {
-//                     background: #f0faf4;
-//                     border-color: #2e8b57;
-//                     color: #1a5235;
-//                 }
-
-//                 .approval-block.rejected {
-//                     background: #fff4f4;
-//                     border-color: #c0392b;
-//                     color: #7b1a1a;
-//                 }
-
-//                 .approval-block.pending {
-//                     background: #fffbf0;
-//                     border-color: #c9a84c;
-//                     color: #7a5c00;
-//                 }
-
-//                 .approval-icon {
-//                     font-size: 20pt;
-//                     line-height: 1;
-//                     flex-shrink: 0;
-//                     margin-top: 2px;
-//                 }
-
-//                 .approval-label {
-//                     font-size: 9.5pt;
-//                     font-weight: 700;
-//                     letter-spacing: 0.06em;
-//                     text-transform: uppercase;
-//                     opacity: 0.75;
-//                     margin-bottom: 2px;
-//                 }
-
-//                 .approval-name { font-size: 12pt; font-weight: 600; }
-//                 .approval-date { font-size: 10pt; margin-top: 3px; opacity: 0.75; }
-//                 .rejection-reason { font-size: 10.5pt; margin-top: 6px; font-style: italic; }
-
-//                 /* FOOTER */
-//                 .print-footer {
-//                     position: fixed;
-//                     bottom: 12mm;
-//                     left: 25mm;
-//                     right: 20mm;
-//                     display: flex;
-//                     justify-content: space-between;
-//                     align-items: center;
-//                     font-size: 9pt;
-//                     color: #8a97aa;
-//                     border-top: 1px solid #d0d8e8;
-//                     padding-top: 6px;
-//                 }
-
-//                 @media print {
-//                     body { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
-//                     .page { padding: 18mm 20mm 24mm 25mm; }
-//                 }
-//             </style>
-//         </head>
-//         <body>
-//             <div class="page">
-
-//                 <!-- LETTERHEAD -->
-//                 <div class="letterhead">
-//                     <div class="org-logo">&#9993;</div>
-//                     <div class="org-info">
-//                         <div class="org-name">บันทึกข้อความ (Memorandum)</div>
-//                         <div class="org-sub">เอกสารภายในองค์กร · Internal Document</div>
-//                     </div>
-//                     ${memo.docNumber ? `<div class="doc-number">เลขที่เอกสาร<strong>${escHtml(memo.docNumber)}</strong></div>` : ''}
-//                 </div>
-
-//                 <!-- DOC TYPE -->
-//                 <div class="doc-type-row">
-//                     <span class="doc-type-badge">${escHtml(memo.type || 'Memorandum')}</span>
-//                 </div>
-
-//                 <!-- TITLE -->
-//                 <div class="memo-title">${escHtml(memo.title)}</div>
-
-//                 <!-- META -->
-//                 <table class="meta-table">
-//                     ${senderHTML}
-//                     ${recipientsHTML}
-//                     <tr>
-//                         <td class="label">วันที่ (Date)</td>
-//                         <td class="value">${dateStr} &nbsp;·&nbsp; ${timeStr} น.</td>
-//                     </tr>
-//                 </table>
-
-//                 <hr class="divider">
-
-//                 <!-- CONTENT -->
-//                 <div class="section-block">
-//                     <div class="section-label">รายละเอียด · Content</div>
-//                     <div class="memo-content">${escHtml(memo.content)}</div>
-//                 </div>
-
-//                 ${imageHTML}
-
-//                 ${approvalHTML}
-
-//                 <!-- FOOTER -->
-//                 <div class="print-footer">
-//                     <span>พิมพ์เมื่อ: ${new Date().toLocaleString('th-TH')}</span>
-//                     <span>เอกสารนี้ออกโดยระบบอัตโนมัติ · Auto-generated document</span>
-//                 </div>
-
-//             </div>
-//         </body>
-//         </html>
-//     `)
-//     printWindow.document.close()
-//     setTimeout(() => printWindow.print(), 400)
-// }
-
 function printMemoDetail() {
     if (!currentMemoDetail) return
 
@@ -16993,6 +16602,10 @@ function printMemoDetail() {
 
     function performPrint() {
         const printWindow = window.open('', '_blank')
+        if (!printWindow) {
+            alert('ไม่สามารถเปิดหน้าต่างพิมพ์ได้ กรุณาอนุญาต popup สำหรับเว็บไซต์นี้แล้วลองใหม่อีกครั้ง')
+            return
+        }
         const memo = currentMemoDetail
 
         const sentDate = new Date(memo.sentAt)
@@ -17654,7 +17267,7 @@ function printMemoDetail() {
                 .divider { border: none; border-top: 1.5px solid #c9a84c; margin: 20px 0; opacity: 0.6; }
 
                 .section-label { font-size: 11pt; color: #5a6a80; letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 8px; padding-bottom: 4px; border-bottom: 1px solid #e0e6f0; }
-                .section-block { margin-bottom: 20px; }
+                .section-block { margin-bottom: 0; }
 
                 .memo-content {
                     font-size: 12pt; line-height: 1.85; color: #1a1a2e;
@@ -17802,7 +17415,7 @@ function printMemoDetail() {
                     justify-content: space-between;
                     gap: 20px;
                     margin-top: 0px;
-                    padding-top: 0px;   
+                    padding-top: 0px;
                 }
 
                 .sig-left, .sig-center, .sig-right {
@@ -17810,17 +17423,18 @@ function printMemoDetail() {
                     text-align: center;
                     display: flex;
                     flex-direction: column;
-                    justify-content: flex-start;
+                    justify-content: flex-end;
                     min-height: auto;
-                    margin-top: -50px;
+                    margin-top: 0;
                 }
 
                 .sig-content {
-                    min-height: 130px;
+                    min-height: 0px;
                     display: flex;
                     flex-direction: column;
-                    justify-content: center;
-                    margin-bottom: 0px;
+                    justify-content: flex-end;
+                    align-items: center;
+                    margin-bottom: 6px;
                 }
 
                 .sig-box-label {
@@ -17840,7 +17454,7 @@ function printMemoDetail() {
                     font-size: 12pt;
                     font-weight: 600;
                     color: #1a1a2e;
-                    margin-bottom: -60px;
+                    margin-bottom: 0;
                 }
 
                 .sig-date-label {
@@ -17949,7 +17563,11 @@ function printMemoDetail() {
                                     : ((memo.isRawMaterialRequest || memo.type === 'Raw Material Request')
                                         ? formatRawMatContentForPrintHTML(memo.content, 'th')
                                         : formatRDProjectContentForPrintHTML(memo.content, 'th')))
-                                : escHtml(memo.content || '')
+                                : escHtml(
+                                    (memo.content || '')
+                                        .replace(/^[ \t\r\n]+|[ \t\r\n]+$/g, '')   // trim leading/trailing blank lines
+                                        .replace(/\n{3,}/g, '\n\n')                // collapse 3+ blank lines to a single blank line
+                                  )
                         }</div>
                     </div>
 
@@ -17967,16 +17585,22 @@ function printMemoDetail() {
     `)
         printWindow.document.close()
 
-        // Decide where the attachments (images) should go:
-        // - if everything fits on one printed page, keep them before the signature (default position)
-        // - if the content overflows to more than one page, move them to a new page right after the signature
+        // Fit everything onto one printed page with the signature pinned to the bottom:
+        // 1. Measure the "main" content (letterhead + meta + memo-content + signature) WITHOUT
+        //    attachments/images, since those are exempt from shrinking and are allowed to spill
+        //    onto their own page instead.
+        // 2. If that main content overflows one page, shrink the memo-content section
+        //    automatically (in small steps) until it fits, or a minimum readable size is reached.
+        // 3. Add the attachments/images back. If the page overflows once they're included,
+        //    move them to a dedicated next page right after the signature (never shrunk).
         ;(function preparePrintPagination() {
             const doc = printWindow.document
             const attachmentsBlock = doc.getElementById('attachmentsBlock')
             const sigFooterBlock = doc.getElementById('sigFooterBlock')
             const pageEl = doc.querySelector('.page')
+            const memoContentEl = doc.querySelector('.memo-content')
 
-            if (!attachmentsBlock || !pageEl) {
+            if (!pageEl) {
                 setTimeout(() => printWindow.print(), 400)
                 return
             }
@@ -18001,44 +17625,81 @@ function printMemoDetail() {
                     const pagePx = ruler.offsetHeight
                     doc.body.removeChild(ruler)
 
-                    const fullHeight = pageEl.scrollHeight
+                    // --- Step 1 & 2: shrink memo-content (if needed) with attachments hidden ---
+                    const originalAttachmentsDisplay = attachmentsBlock ? attachmentsBlock.style.display : ''
+                    if (attachmentsBlock) attachmentsBlock.style.display = 'none'
 
-                    if (fullHeight > pagePx && sigFooterBlock) {
-                        // Overflows one page: push attachments to page 2, right after the signature
-                        attachmentsBlock.classList.add('force-next-page')
-                        sigFooterBlock.parentNode.insertBefore(attachmentsBlock, sigFooterBlock.nextSibling)
+                    if (memoContentEl) {
+                        const supportsZoom = 'zoom' in doc.documentElement.style
+                        const MIN_SCALE = 0.65
 
-                        // Resize the images to display large and all fit within that one dedicated page
-                        const gridDiv = attachmentsBlock.querySelector('#attachmentsGrid')
-                        const gridImgs = gridDiv ? Array.from(gridDiv.querySelectorAll('img')) : []
-                        const n = gridImgs.length
+                        if (supportsZoom) {
+                            // Use zoom so nested elements with their own explicit font sizes
+                            // (e.g. R&D project / raw material tables) shrink along with plain text,
+                            // and the layout's actual height shrinks accordingly (not just visually).
+                            let zoomLevel = 1
+                            while (pageEl.scrollHeight > pagePx && zoomLevel > MIN_SCALE) {
+                                zoomLevel = Math.round((zoomLevel - 0.05) * 100) / 100
+                                memoContentEl.style.zoom = zoomLevel
+                            }
+                        } else {
+                            // Fallback for engines without `zoom` support: shrink font-size directly.
+                            // This covers plain text content; nested elements with their own fixed
+                            // font sizes (e.g. table cells) won't shrink further here.
+                            const startingPx = parseFloat(getComputedStyle(memoContentEl).fontSize) || 16
+                            const minPx = Math.max(startingPx * MIN_SCALE, 11)
+                            let sizePx = startingPx
+                            while (pageEl.scrollHeight > pagePx && sizePx > minPx) {
+                                sizePx -= 0.5
+                                memoContentEl.style.fontSize = sizePx + 'px'
+                            }
+                        }
+                    }
 
-                        if (n > 0) {
-                            const columns = n === 1 ? 1 : (n <= 4 ? 2 : 3)
-                            const rows = Math.ceil(n / columns)
-                            const gap = 12
-                            const labelEl = attachmentsBlock.querySelector('.section-label')
-                            const labelSpace = (labelEl ? labelEl.offsetHeight : 0) + 24
-                            const availableHeight = pagePx - labelSpace - 20
-                            const cellHeight = Math.max(80, (availableHeight - gap * (rows - 1)) / rows)
+                    // Restore attachments before deciding where they belong
+                    if (attachmentsBlock) attachmentsBlock.style.display = originalAttachmentsDisplay
 
-                            gridDiv.style.display = 'grid'
-                            gridDiv.style.gridTemplateColumns = `repeat(${columns}, 1fr)`
-                            gridDiv.style.gridAutoRows = `${cellHeight}px`
-                            gridDiv.style.gap = `${gap}px`
-                            gridDiv.style.width = '100%'
-                            gridDiv.style.justifyItems = 'center'
-                            gridDiv.style.alignItems = 'center'
+                    // --- Step 3: attachments/images are exempt from shrinking; move them out if needed ---
+                    if (attachmentsBlock && sigFooterBlock) {
+                        const fullHeight = pageEl.scrollHeight
 
-                            gridImgs.forEach(img => {
-                                img.style.maxWidth = '100%'
-                                img.style.maxHeight = `${cellHeight}px`
-                                img.style.width = 'auto'
-                                img.style.height = 'auto'
-                                img.style.margin = '0 auto'
-                                img.style.display = 'block'
-                                img.style.objectFit = 'contain'
-                            })
+                        if (fullHeight > pagePx) {
+                            // Overflows one page: push attachments to page 2, right after the signature
+                            attachmentsBlock.classList.add('force-next-page')
+                            sigFooterBlock.parentNode.insertBefore(attachmentsBlock, sigFooterBlock.nextSibling)
+
+                            // Resize the images to display large and all fit within that one dedicated page
+                            const gridDiv = attachmentsBlock.querySelector('#attachmentsGrid')
+                            const gridImgs = gridDiv ? Array.from(gridDiv.querySelectorAll('img')) : []
+                            const n = gridImgs.length
+
+                            if (n > 0) {
+                                const columns = n === 1 ? 1 : (n <= 4 ? 2 : 3)
+                                const rows = Math.ceil(n / columns)
+                                const gap = 12
+                                const labelEl = attachmentsBlock.querySelector('.section-label')
+                                const labelSpace = (labelEl ? labelEl.offsetHeight : 0) + 24
+                                const availableHeight = pagePx - labelSpace - 20
+                                const cellHeight = Math.max(80, (availableHeight - gap * (rows - 1)) / rows)
+
+                                gridDiv.style.display = 'grid'
+                                gridDiv.style.gridTemplateColumns = `repeat(${columns}, 1fr)`
+                                gridDiv.style.gridAutoRows = `${cellHeight}px`
+                                gridDiv.style.gap = `${gap}px`
+                                gridDiv.style.width = '100%'
+                                gridDiv.style.justifyItems = 'center'
+                                gridDiv.style.alignItems = 'center'
+
+                                gridImgs.forEach(img => {
+                                    img.style.maxWidth = '100%'
+                                    img.style.maxHeight = `${cellHeight}px`
+                                    img.style.width = 'auto'
+                                    img.style.height = 'auto'
+                                    img.style.margin = '0 auto'
+                                    img.style.display = 'block'
+                                    img.style.objectFit = 'contain'
+                                })
+                            }
                         }
                     }
 
@@ -18049,9 +17710,8 @@ function printMemoDetail() {
         }
     }
 }
-        
-// Close memo detail when clicking outside
-        document.addEventListener('click', function (e) {
+
+document.addEventListener('click', function (e) {
             const overlay = document.getElementById('memoDetailOverlay')
             if (overlay && e.target === overlay) {
                 closeMemoDetail()
@@ -21922,7 +21582,10 @@ function printMemoDetail() {
             }
         }
 
+        //ตอนนี้พื้นที่ด้านล่างลายเซ็ตยังเยอะอยู่ แก้ไขที
+
     </script>
+
 
 </body>
 
